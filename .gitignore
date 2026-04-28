@@ -1,0 +1,42 @@
+# Dataset — no subir archivos GDF (son pesados y tienen licencia propia)
+data/raw/*.gdf
+data/raw/*.mat
+data/processed/
+
+# Entorno virtual Python
+venv/
+env/
+.env/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Resultados generados (figuras y métricas se generan con el código)
+results/figures/*.png
+results/figures/*.pdf
+results/metrics/*.csv
+
+# Checkpoints de modelos entrenados (pueden ser muy pesados)
+*.pth
+*.pt
+*.ckpt
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
