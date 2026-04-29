@@ -1,154 +1,218 @@
-# EEG Motor Imagery Classification — BCI Competition IV-2b
+# EEG Motor Imagery Classification — ERSP + CNN on BCI Competition IV-2b
 
-**Trabajo de Grado — Maestría en Ingeniería**  
-Institución Universitaria de Envigado, 2026  
-Autor: Juan Carlos Guerrero Sierra  
-Asesor: Hernán Darío Villota Bolaños
-
----
-
-## Descripción
-
-Pipeline reproducible para la clasificación binaria de imaginación motora (mano izquierda vs. derecha) a partir de señales EEG, utilizando espectrogramas ERSP como entrada a redes neuronales convolucionales (CNN) ligeras.
-
-**Dataset:** BCI Competition IV – Dataset 2b  
-**Arquitecturas evaluadas:** EEGNet, ShallowConvNet, SpectNet  
-**Entregable académico:** Artículo científico sometido a revista indexada
+[![Python](https://img.shields.io/badge/Python-3.10%2B-blue?logo=python)](https://www.python.org/)
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.1%2B-orange?logo=pytorch)](https://pytorch.org/)
+[![MNE](https://img.shields.io/badge/MNE--Python-1.6%2B-green)](https://mne.tools/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 ---
 
-## Estructura del repositorio
+## Overview
 
-```
-bci-iv2b-ersp-cnn/
-├── README.md
-├── requirements.txt
-├── data/
-│   ├── raw/          ← coloca aquí los archivos GDF (B01T.gdf ... B09E.gdf)
-│   └── processed/    ← épocas y espectrogramas generados automáticamente
-├── notebooks/
-│   └── 01_explorar_dataset.ipynb   ← visualización y verificación del dataset
-├── src/
-│   ├── config.py          ← todos los hiperparámetros centralizados
-│   ├── preprocessing.py   ← carga, filtrado, ICA, epoching
-│   ├── ersp.py            ← generación de espectrogramas ERSP
-│   ├── dataset.py         ← PyTorch Dataset para imágenes ERSP
-│   ├── models/
-│   │   ├── eegnet.py
-│   │   ├── shallowconvnet.py
-│   │   └── spectnet.py
-│   ├── train.py           ← entrenamiento y validación
-│   └── evaluate.py        ← métricas, matriz de confusión, Grad-CAM
-├── results/
-│   ├── figures/           ← gráficos generados
-│   └── metrics/           ← CSVs con resultados
-└── .gitignore
-```
+Reproducible pipeline for **binary EEG motor imagery (MI) classification** (left hand vs. right hand) using **Event-Related Spectral Perturbation (ERSP) spectrograms** as input to lightweight **Convolutional Neural Network (CNN)** architectures.
 
----
+This repository contains the full implementation developed as part of the Master's thesis:
 
-## Instalación
-
-```bash
-# 1. Clonar el repositorio
-git clone https://github.com/TU_USUARIO/bci-iv2b-ersp-cnn.git
-cd bci-iv2b-ersp-cnn
-
-# 2. Crear entorno virtual (recomendado)
-python -m venv venv
-source venv/bin/activate        # Linux/Mac
-venv\Scripts\activate           # Windows
-
-# 3. Instalar dependencias
-pip install -r requirements.txt
-```
-
----
-
-## Uso rápido
-
-### Paso 1 — Verificar el dataset
-```bash
-# Coloca los 18 archivos GDF en data/raw/ y ejecuta:
-python src/preprocessing.py --verify
-```
-
-### Paso 2 — Exploración visual (notebook)
-```bash
-jupyter notebook notebooks/01_explorar_dataset.ipynb
-```
-
-### Paso 3 — Preprocesamiento completo
-```bash
-python src/preprocessing.py --subject all
-```
-
-### Paso 4 — Generar espectrogramas ERSP
-```bash
-python src/ersp.py
-```
-
-### Paso 5 — Entrenar modelos
-```bash
-python src/train.py --model eegnet
-python src/train.py --model shallowconvnet
-python src/train.py --model spectnet
-```
-
-### Paso 6 — Evaluación comparativa
-```bash
-python src/evaluate.py
-```
+> **"Classification of Hand Movement Intention using Deep Learning and ERSP Analysis of EEG Signals: Implementation and Evaluation of Existing Architectures"**
+> Juan Carlos Guerrero Sierra
+> Maestría en Ingeniería — Institución Universitaria de Envigado, Colombia, 2026
+> Advisor: Hernán Darío Villota Bolaños
 
 ---
 
 ## Dataset
 
-El BCI-IV-2b no se incluye en este repositorio. Descárgalo desde:  
-https://www.bbci.de/competition/iv/download/
+**BCI Competition IV – Dataset 2b** (Leeb et al., 2008)
+- 9 subjects · 5 sessions · 3 electrodes (C3, Cz, C4) · 250 Hz
+- Binary MI task: left hand (class 0) vs. right hand (class 1)
+- Download: https://www.bbci.de/competition/iv/download/
 
-Coloca los 18 archivos en `data/raw/`:
-- Entrenamiento: `B01T.gdf` ... `B09T.gdf`
-- Evaluación: `B01E.gdf` ... `B09E.gdf`
-
----
-
-## Parámetros del pipeline
-
-Todos los parámetros están centralizados en `src/config.py`. Los principales:
-
-| Parámetro | Valor | Justificación |
-|-----------|-------|---------------|
-| Filtro pasa banda | 8–30 Hz | Bandas mu y beta (actividad motora) |
-| Ventana de análisis | -0.5 a 4.0 s | Incluye línea base pre-estímulo |
-| Transformada | STFT (Hann) | Balance resolución tiempo-frecuencia |
-| Longitud de ventana STFT | 256 muestras (1.024 s) | Resolución frecuencial de ~1 Hz |
-| Solapamiento STFT | 75% (64 muestras de paso) | Resolución temporal suficiente |
-| Rango frecuencial | 8–30 Hz | 22 bins de frecuencia |
-| Normalización | ERSP divisiva (dB) | Relativa a línea base pre-estímulo |
-| Dimensión imagen | 22 × 128 px | Por canal y por ensayo |
-| División train/test | Sesiones 1-3 / 4-5 | Protocolo estándar BCI-IV-2b |
+> **Note:** Dataset files (`.gdf`) are not included due to licensing. Download them and place them in `data/raw/`.
 
 ---
 
-## Resultados esperados
-
-*(Esta sección se completará con los resultados experimentales)*
-
----
-
-## Cita
-
-Si utilizas este código, por favor cita:
+## Repository Structure
 
 ```
-Guerrero Sierra, J.C. (2026). Clasificación de imaginación motora EEG 
-mediante CNN y espectrogramas ERSP sobre BCI-IV-2b. Trabajo de Grado, 
-Maestría en Ingeniería, Institución Universitaria de Envigado.
+eeg-motor-imagery-ersp-cnn/
+├── README.md
+├── requirements.txt
+├── .gitignore
+├── data/
+│   ├── raw/               ← place your GDF files here (B01T.gdf ... B09E.gdf)
+│   └── processed/         ← auto-generated epochs (.fif) and spectrograms (.npz)
+├── notebooks/
+│   └── 01_explore_dataset.ipynb
+├── src/
+│   ├── config.py          ← all pipeline parameters (single source of truth)
+│   ├── preprocessing.py   ← GDF loading, bandpass filter, ICA, epoching
+│   ├── ersp.py            ← STFT-based ERSP spectrogram generation
+│   ├── dataset.py         ← PyTorch Dataset / DataLoader
+│   ├── train.py           ← training loop with early stopping
+│   ├── evaluate.py        ← metrics, confusion matrix, model comparison
+│   └── models/
+│       ├── __init__.py
+│       ├── eegnet.py      ← EEGNet (Lawhern et al., 2018)
+│       ├── shallowconvnet.py   ← ShallowConvNet (Schirrmeister et al., 2017)
+│       └── spectnet.py    ← SpectNet (Ruffini et al., 2018)
+└── results/
+    ├── figures/
+    └── metrics/
 ```
 
 ---
 
-## Licencia
+## Pipeline Overview
 
-MIT License — ver archivo `LICENSE`
+```
+BCI-IV-2b GDF files
+        │
+        ▼
+1. Preprocessing       (src/preprocessing.py)
+   ├─ Channels: C3, Cz, C4
+   ├─ Bandpass: 8–30 Hz (FIR Hamming)
+   ├─ Artifacts: ICA (FastICA, 3 components)
+   └─ Epochs: −0.5 to 4.0 s
+        │
+        ▼
+2. ERSP Generation     (src/ersp.py)
+   ├─ STFT: Hann window, 256 samples, 75% overlap
+   ├─ Range: 8–30 Hz → 22 bins
+   ├─ Normalization: divisive baseline (dB)
+   └─ Output: (3, 22, 128) tensor per trial
+        │
+        ▼
+3. CNN Classification  (src/train.py + src/models/)
+   ├─ EEGNet          ~2,300 parameters
+   ├─ ShallowConvNet  ~47,000 parameters
+   └─ SpectNet        ~1,500 parameters
+        │
+        ▼
+4. Evaluation          (src/evaluate.py)
+   ├─ Protocol: sessions 1–3 train | sessions 4–5 test
+   ├─ Metrics: accuracy, kappa, F1, confusion matrix
+   └─ Baselines: LDA, SVM+CSP
+```
+
+---
+
+## Installation
+
+```bash
+git clone https://github.com/jcgs1030/eeg-motor-imagery-ersp-cnn.git
+cd eeg-motor-imagery-ersp-cnn
+
+python -m venv venv
+source venv/bin/activate        # Linux / macOS
+venv\Scripts\activate           # Windows
+
+pip install -r requirements.txt
+```
+
+**Python 3.10+ recommended.**
+
+---
+
+## Quick Start
+
+### 1. Place dataset files in `data/raw/`
+
+```
+B01T.gdf  B01E.gdf  ...  B09T.gdf  B09E.gdf
+```
+
+### 2. Verify dataset
+```bash
+python src/preprocessing.py --verify
+```
+
+### 3. Explore (notebook)
+```bash
+jupyter notebook notebooks/01_explore_dataset.ipynb
+```
+
+### 4. Full pipeline
+
+```bash
+python src/preprocessing.py --subject all --suffix both
+python src/ersp.py --subject all --suffix both --plot
+python src/train.py --model spectnet --all_subjects
+python src/train.py --model eegnet --all_subjects
+python src/train.py --model shallowconvnet --all_subjects
+python src/evaluate.py
+```
+
+---
+
+## Key Parameters (src/config.py)
+
+| Parameter | Value | Rationale |
+|-----------|-------|-----------|
+| Bandpass filter | 8–30 Hz | Mu and beta bands |
+| Epoch window | −0.5 to 4.0 s | Includes pre-stimulus baseline |
+| STFT window | 256 samples (1.024 s) | ~1 Hz frequency resolution |
+| STFT overlap | 75% | Adequate temporal resolution |
+| ERSP range | 8–30 Hz (22 bins) | Motor-relevant frequencies |
+| Normalization | Divisive baseline (dB) | Relative to pre-stimulus |
+| Image size | 22 × 128 px | Per channel, per trial |
+| Train / test | Sessions 1–3 / 4–5 | Standard BCI-IV-2b protocol |
+| Optimizer | Adam lr=0.001 | Weight decay = 1e−4 |
+| Early stopping | Patience = 20 | On validation loss |
+
+---
+
+## Architectures
+
+| Architecture | Parameters | Reference |
+|---|---|---|
+| **EEGNet** | ~2,300 | Lawhern et al., J. Neural Eng., 2018 |
+| **ShallowConvNet** | ~47,000 | Schirrmeister et al., Hum. Brain Mapp., 2017 |
+| **SpectNet** | ~1,500 | Ruffini et al., arXiv, 2018 |
+
+All input: `(batch, 3, 22, 128)` — 3 channels × 22 freq. bins × 128 time steps.
+
+---
+
+## Results
+
+> To be completed after the experimental phase.
+
+| Method | Mean Acc. (%) | Kappa | F1-score |
+|--------|-------------|-------|----------|
+| LDA | — | — | — |
+| SVM + CSP | — | — | — |
+| EEGNet | — | — | — |
+| ShallowConvNet | — | — | — |
+| SpectNet | — | — | — |
+
+---
+
+## References
+
+- Leeb, R. et al. (2008). *BCI Competition 2008 – Graz Data Set B*. Graz University of Technology.
+- Lawhern, V.J. et al. (2018). *EEGNet*. J. Neural Eng., 15(5), 056013.
+- Schirrmeister, R.T. et al. (2017). *Deep learning with CNNs for EEG decoding*. Hum. Brain Mapp., 38(11).
+- Ruffini, G. et al. (2018). *Deep learning using EEG spectrograms for RBD prognosis*. arXiv.
+- Gramfort, A. et al. (2014). *MNE software for MEG and EEG data*. NeuroImage, 86.
+
+---
+
+## Citation
+
+```bibtex
+@mastersthesis{guerrero2026eeg,
+  author  = {Guerrero Sierra, Juan Carlos},
+  title   = {Classification of Hand Movement Intention using Deep Learning
+             and ERSP Analysis of EEG Signals},
+  school  = {Institución Universitaria de Envigado},
+  year    = {2026},
+  address = {Envigado, Colombia},
+  note    = {https://github.com/jcgs1030/eeg-motor-imagery-ersp-cnn}
+}
+```
+
+---
+
+## License
+
+MIT License — see [LICENSE](LICENSE) for details.
