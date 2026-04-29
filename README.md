@@ -102,14 +102,22 @@ BCI-IV-2b GDF files
 git clone https://github.com/jcgs1030/eeg-motor-imagery-ersp-cnn.git
 cd eeg-motor-imagery-ersp-cnn
 
+uv sync
+```
+
+This creates a virtual environment and installs all dependencies automatically.
+**Requires [uv](https://docs.astral.sh/uv/) and Python 3.10+.**
+
+<details>
+<summary>Alternative: pip</summary>
+
+```bash
 python -m venv venv
 source venv/bin/activate        # Linux / macOS
 venv\Scripts\activate           # Windows
-
 pip install -r requirements.txt
 ```
-
-**Python 3.10+ recommended.**
+</details>
 
 ---
 
@@ -123,23 +131,23 @@ B01T.gdf  B01E.gdf  ...  B09T.gdf  B09E.gdf
 
 ### 2. Verify dataset
 ```bash
-python src/preprocessing.py --verify
+uv run python src/preprocessing.py --verify
 ```
 
 ### 3. Explore (notebook)
 ```bash
-jupyter notebook notebooks/01_explore_dataset.ipynb
+uv run jupyter notebook notebooks/01_explore_dataset.ipynb
 ```
 
 ### 4. Full pipeline
 
 ```bash
-python src/preprocessing.py --subject all --suffix both
-python src/ersp.py --subject all --suffix both --plot
-python src/train.py --model spectnet --all_subjects
-python src/train.py --model eegnet --all_subjects
-python src/train.py --model shallowconvnet --all_subjects
-python src/evaluate.py
+uv run python src/preprocessing.py --subject all --suffix both
+uv run python src/ersp.py --subject all --suffix both --plot
+uv run python src/train.py --model spectnet --all_subjects
+uv run python src/train.py --model eegnet --all_subjects
+uv run python src/train.py --model shallowconvnet --all_subjects
+uv run python src/evaluate.py
 ```
 
 ---
