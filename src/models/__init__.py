@@ -1,7 +1,7 @@
 """
 models/__init__.py
 ------------------
-Factory para instanciar modelos por nombre.
+Factory for instantiating models by name.
 """
 
 from .spectnet      import SpectNet
@@ -11,14 +11,14 @@ from .shallowconvnet import ShallowConvNet
 
 def get_model(name: str, **kwargs):
     """
-    Retorna una instancia del modelo indicado.
+    Return an instance of the requested model.
 
-    Parámetros
+    Parameters
     ----------
     name   : 'spectnet' | 'eegnet' | 'shallowconvnet'
-    kwargs : parámetros del constructor (n_channels, n_freq, n_time, n_classes, ...)
+    kwargs : constructor parameters (n_channels, n_freq, n_time, n_classes, ...)
 
-    Ejemplo
+    Example
     -------
     model = get_model('spectnet', n_channels=3, n_freq=22, n_time=128, n_classes=2)
     """
@@ -30,8 +30,8 @@ def get_model(name: str, **kwargs):
     }
     if name not in registry:
         raise ValueError(
-            f"Modelo '{name}' no reconocido. "
-            f"Opciones: {list(registry.keys())}"
+            f"Unknown model '{name}'. "
+            f"Options: {list(registry.keys())}"
         )
     return registry[name](**kwargs)
 

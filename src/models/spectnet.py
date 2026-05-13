@@ -1,10 +1,10 @@
 """
 models/spectnet.py
 ------------------
-SpectNet: CNN de 4 capas convolucionales para clasificación
-de espectrogramas EEG (Ruffini et al., 2018).
+SpectNet: 4-layer CNN for EEG spectrogram classification
+(Ruffini et al., 2018).
 
-Referencia:
+Reference:
     Ruffini G. et al., "Deep learning using EEG spectrograms for prognosis
     in idiopathic REM behavior disorder (RBD)", arXiv, 2018.
 """
@@ -16,19 +16,19 @@ import torch.nn.functional as F
 
 class SpectNet(nn.Module):
     """
-    CNN ligera de 4 capas convolucionales diseñada para espectrogramas EEG.
+    Lightweight 4-layer CNN designed for EEG spectrograms.
 
-    Arquitectura (adaptada de Ruffini et al. 2018):
+    Architecture (adapted from Ruffini et al. 2018):
         Conv2D(depth=8)  → ReLU → MaxPool(temporal)
         Conv2D(depth=16) → ReLU → MaxPool(temporal)
         Flatten
         FC(256) → Dropout(0.5)
         FC(n_classes)   → Softmax
 
-    Entrada: (batch, n_channels, n_freq_bins, n_time_bins)
-             e.g. (32, 3, 22, 128)
-    Salida:  (batch, n_classes)
-             e.g. (32, 2)
+    Input:  (batch, n_channels, n_freq_bins, n_time_bins)
+            e.g. (32, 3, 22, 128)
+    Output: (batch, n_classes)
+            e.g. (32, 2)
     """
 
     def __init__(self,
@@ -39,34 +39,34 @@ class SpectNet(nn.Module):
                  dropout: float = 0.5):
         super().__init__()
 
-        # ── Bloque convolucional 1 ──
+        # ── Convolutional block 1 ──
         self.conv1 = nn.Conv2d(
             in_channels=n_channels,
             out_channels=8,
             kernel_size=(3, 3),
             padding=(1, 1)
         )
-        self.pool1 = nn.MaxPool2d(kernel_size=(1, 4))   # reducción temporal
+        self.pool1 = nn.MaxPool2d(kernel_size=(1, 4))   # temporal reduction
 
-        # ── Bloque convolucional 2 ──
+        # ── Convolutional block 2 ──
         self.conv2 = nn.Conv2d(
             in_channels=8,
             out_channels=16,
             kernel_size=(2, 4),
             padding=(0, 0)
         )
-        self.pool2 = nn.MaxPool2d(kernel_size=(1, 4))   # reducción temporal
+        self.pool2 = nn.MaxPool2d(kernel_size=(1, 4))   # temporal reduction
 
-        # Calcular tamaño de la capa plana
+        # Compute flattened layer size
         self._flat_size = self._compute_flat_size(n_channels, n_freq, n_time)
 
-        # ── Capas fully connected ──
+        # ── Fully connected layers ──
         self.fc1     = nn.Linear(self._flat_size, 256)
         self.dropout = nn.Dropout(p=dropout)
         self.fc2     = nn.Linear(256, n_classes)
 
     def _compute_flat_size(self, n_ch, n_freq, n_time) -> int:
-        """Calcula el tamaño de salida de las capas convolucionales."""
+        """Compute the output size of the convolutional layers."""
         dummy = torch.zeros(1, n_ch, n_freq, n_time)
         with torch.no_grad():
             out = self._conv_forward(dummy)
@@ -89,10 +89,10 @@ class SpectNet(nn.Module):
 
 
 if __name__ == "__main__":
-    # Test rápido del modelo
+    # Quick model smoke test
     model = SpectNet(n_channels=3, n_freq=22, n_time=128, n_classes=2)
-    print(f"SpectNet — Parámetros entrenables: {model.count_parameters():,}")
+    print(f"SpectNet — Trainable parameters: {model.count_parameters():,}")
 
     x = torch.randn(16, 3, 22, 128)
     out = model(x)
-    print(f"Entrada: {x.shape}  →  Salida: {out.shape}")
+    print(f"Input: {x.shape}  →  Output: {out.shape}")

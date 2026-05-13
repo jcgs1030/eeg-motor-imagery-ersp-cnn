@@ -2,7 +2,7 @@
 name = "eeg-motor-imagery-ersp-cnn"
 version = "0.1.0"
 description = "EEG motor imagery classification using ERSP spectrograms and CNN architectures"
-requires-python = ">=3.10"
+requires-python = "==3.12.*"
 dependencies = [
     "mne>=1.6.0",
     "numpy>=1.24.0",
@@ -26,7 +26,11 @@ train      = "src.train:main"
 evaluate   = "src.evaluate:main"
 
 [tool.uv]
-dev-dependencies = []
+dev-dependencies = [
+    "ruff>=0.4.0",
+    "pytest>=8.0.0",
+    "ipywidgets>=8.0.0",
+]
 
 [build-system]
 requires      = ["hatchling"]

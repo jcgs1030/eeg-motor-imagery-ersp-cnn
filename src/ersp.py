@@ -1,13 +1,13 @@
 """
 ersp.py
 -------
-Generación de espectrogramas ERSP (Event-Related Spectral Perturbation)
-a partir de las épocas preprocesadas del BCI-IV-2b.
+Generation of ERSP (Event-Related Spectral Perturbation) spectrograms
+from preprocessed epochs of BCI-IV-2b.
 
-Uso:
-    python src/ersp.py                        # genera todos los sujetos
-    python src/ersp.py --subject 1            # solo sujeto 1
-    python src/ersp.py --subject 1 --plot     # generar y visualizar
+Usage:
+    python src/ersp.py                        # generate all subjects
+    python src/ersp.py --subject 1            # subject 1 only
+    python src/ersp.py --subject 1 --plot     # generate and visualise
 """
 
 import argparse
@@ -34,27 +34,27 @@ from config import (
 mne.set_log_level("WARNING")
 
 
-# ── Core ERSP ───────────────────────────────────────────────────────────────
+# ── Core ERSP ────────────────────────────────────────────────────────────────
 
 def compute_ersp_image(epoch_data: np.ndarray,
                        baseline_data: np.ndarray,
                        sfreq: float = SFREQ) -> np.ndarray:
     """
-    Calcula la imagen ERSP de un ensayo individual.
+    Compute the ERSP image for a single trial.
 
     ERSP(f, t) = 10 * log10( P(f, t) / P_baseline(f) )
 
-    Parámetros
+    Parameters
     ----------
-    epoch_data    : array (n_samples,) — señal del ensayo completo (línea base + MI)
-    baseline_data : array (n_samples,) — solo la ventana de línea base pre-estímulo
-    sfreq         : frecuencia de muestreo
+    epoch_data    : array (n_samples,) — full trial signal (baseline + MI)
+    baseline_data : array (n_samples,) — pre-stimulus baseline window only
+    sfreq         : sampling frequency
 
-    Retorna
+    Returns
     -------
-    ersp_img : array (IMG_FREQ_BINS, IMG_TIME_BINS) — imagen ERSP normalizada [0, 1]
+    ersp_img : array (IMG_FREQ_BINS, IMG_TIME_BINS) — normalised ERSP image [0, 1]
     """
-    # ── STFT del ensayo completo ──
+    # ── STFT of the full trial ──
     freqs, times_stft, Zxx = stft(
         epoch_data,
         fs=sfreq,
@@ -65,7 +65,7 @@ def compute_ersp_image(epoch_data: np.ndarray,
     )
     power = np.abs(Zxx) ** 2  # (n_freqs_stft, n_times_stft)
 
-    # ── STFT de la línea base ──
+    # ── STFT of the baseline ──
     _, _, Zxx_bl = stft(
         baseline_data,
         fs=sfreq,
@@ -75,19 +75,19 @@ def compute_ersp_image(epoch_data: np.ndarray,
         padded=True
     )
     power_bl = np.abs(Zxx_bl) ** 2  # (n_freqs_stft, n_times_bl)
-    baseline_mean = power_bl.mean(axis=-1, keepdims=True) + 1e-12  # evitar div/0
+    baseline_mean = power_bl.mean(axis=-1, keepdims=True) + 1e-12  # avoid div/0
 
-    # ── ERSP divisiva (en dB) ──
+    # ── Divisive ERSP (in dB) ──
     ersp = 10 * np.log10(power / baseline_mean + 1e-12)
 
-    # ── Seleccionar rango de frecuencias de interés ──
+    # ── Select frequency range of interest ──
     freq_mask = (freqs >= ERSP_FMIN) & (freqs <= ERSP_FMAX)
     ersp_roi = ersp[freq_mask, :]    # (n_freq_roi, n_times_stft)
 
-    # ── Redimensionar a IMG_SIZE con interpolación ──
+    # ── Resize to IMG_SIZE with interpolation ──
     ersp_resized = _resize_2d(ersp_roi, IMG_FREQ_BINS, IMG_TIME_BINS)
 
-    # ── Normalizar al rango [0, 1] ──
+    # ── Normalise to [0, 1] ──
     vmin, vmax = ersp_resized.min(), ersp_resized.max()
     if vmax - vmin > 1e-8:
         ersp_norm = (ersp_resized - vmin) / (vmax - vmin)
@@ -98,44 +98,43 @@ def compute_ersp_image(epoch_data: np.ndarray,
 
 
 def _resize_2d(arr: np.ndarray, n_rows: int, n_cols: int) -> np.ndarray:
-    """Redimensiona un array 2D a (n_rows, n_cols) mediante interpolación lineal."""
+    """Resize a 2D array to (n_rows, n_cols) using bilinear interpolation."""
     from scipy.ndimage import zoom
     zoom_r = n_rows / arr.shape[0]
     zoom_c = n_cols / arr.shape[1]
-    return zoom(arr, (zoom_r, zoom_c), order=1)  # interpolación bilineal
+    return zoom(arr, (zoom_r, zoom_c), order=1)
 
 
-# ── Procesamiento por sujeto ─────────────────────────────────────────────────
+# ── Per-subject processing ───────────────────────────────────────────────────
 
 def generate_ersp_for_subject(subject: int, suffix: str,
                                save: bool = True) -> dict:
     """
-    Genera los espectrogramas ERSP para todos los ensayos de un sujeto.
+    Generate ERSP spectrograms for all trials of one subject.
 
-    Retorna
+    Returns
     -------
-    result : dict con keys:
+    result : dict with keys:
         'X'       : array (n_trials, n_channels, IMG_FREQ_BINS, IMG_TIME_BINS)
-        'y'       : array (n_trials,) — etiquetas 0=izquierda, 1=derecha
-        'subject' : número de sujeto
-        'suffix'  : 'T' o 'E'
+        'y'       : array (n_trials,) — labels 0=left, 1=right
+        'subject' : subject number
+        'suffix'  : 'T' or 'E'
     """
     tag = f"S{subject:02d}{suffix}"
     epo_path = DATA_PROC / f"{tag}-epo.fif"
 
     if not epo_path.exists():
         raise FileNotFoundError(
-            f"No se encontró {epo_path.name}. "
-            f"Ejecuta primero: python src/preprocessing.py --subject {subject}"
+            f"{epo_path.name} not found. "
+            f"Run first: python src/preprocessing.py --subject {subject}"
         )
 
-    print(f"\n  Generando ERSP para {tag}...")
+    print(f"\n  Generating ERSP for {tag}...")
     epochs = mne.read_epochs(str(epo_path), verbose=False)
 
-    # Índices de tiempo para línea base y ventana de imaginación
+    # Time indices for baseline and imagery window
     bl_start = 0
-    bl_end   = int(abs(EPOCH_TMIN) * SFREQ)  # hasta t=0
-    # (la señal completa incluye línea base + periodo de imaginación)
+    bl_end   = int(abs(EPOCH_TMIN) * SFREQ)  # up to t=0
 
     X_list, y_list = [], []
 
@@ -164,15 +163,15 @@ def generate_ersp_for_subject(subject: int, suffix: str,
                 y_list.append(cls_label)
 
     if not X_list:
-        raise ValueError(f"No se pudieron generar espectrogramas para {tag}")
+        raise ValueError(f"Could not generate spectrograms for {tag}")
 
     X = np.array(X_list, dtype=np.float32)  # (N, C, F, T)
     y = np.array(y_list,  dtype=np.int64)   # (N,)
 
     n_left  = (y == 0).sum()
     n_right = (y == 1).sum()
-    print(f"    ERSP generados: {len(X)} ensayos "
-          f"(izquierda: {n_left}, derecha: {n_right}) — forma: {X.shape}")
+    print(f"    ERSP generated: {len(X)} trials "
+          f"(left: {n_left}, right: {n_right}) — shape: {X.shape}")
 
     result = {"X": X, "y": y, "subject": subject, "suffix": suffix}
 
@@ -180,25 +179,25 @@ def generate_ersp_for_subject(subject: int, suffix: str,
         out_path = DATA_PROC / f"{tag}-ersp.npz"
         np.savez_compressed(str(out_path), X=X, y=y,
                             subject=subject, suffix=suffix)
-        print(f"    Guardado en: {out_path.name}")
+        print(f"    Saved to: {out_path.name}")
 
     return result
 
 
-# ── Visualización ────────────────────────────────────────────────────────────
+# ── Visualisation ────────────────────────────────────────────────────────────
 
 def plot_ersp_examples(subject: int, suffix: str = TRAIN_SUFFIX,
                        n_examples: int = 3, save_fig: bool = True):
     """
-    Visualiza ejemplos de imágenes ERSP para un sujeto,
-    mostrando n_examples ensayos de cada clase.
+    Visualise example ERSP images for one subject,
+    showing n_examples trials per class.
     """
     tag = f"S{subject:02d}{suffix}"
     npz_path = DATA_PROC / f"{tag}-ersp.npz"
 
     if not npz_path.exists():
-        print(f"  No se encontró {npz_path.name}. "
-              f"Ejecuta primero: python src/ersp.py --subject {subject}")
+        print(f"  {npz_path.name} not found. "
+              f"Run first: python src/ersp.py --subject {subject}")
         return
 
     data = np.load(str(npz_path))
@@ -207,20 +206,20 @@ def plot_ersp_examples(subject: int, suffix: str = TRAIN_SUFFIX,
     idx_left  = np.where(y == 0)[0][:n_examples]
     idx_right = np.where(y == 1)[0][:n_examples]
 
-    n_rows = 2 * N_CHANNELS  # 2 clases × 3 canales
+    n_rows = 2 * N_CHANNELS  # 2 classes × 3 channels
     n_cols = n_examples
     fig, axes = plt.subplots(n_rows, n_cols,
                              figsize=(4 * n_cols, 3 * n_rows))
     fig.suptitle(
-        f"Espectrogramas ERSP — Sujeto {subject:02d} "
-        f"({'Entrenamiento' if suffix == 'T' else 'Evaluación'})\n"
-        f"Filas: Izquierda (C3/Cz/C4) | Derecha (C3/Cz/C4) — "
-        f"Eje X: tiempo | Eje Y: frecuencia (8–30 Hz)",
+        f"ERSP spectrograms — Subject {subject:02d} "
+        f"({'Training' if suffix == 'T' else 'Evaluation'})\n"
+        f"Rows: Left (C3/Cz/C4) | Right (C3/Cz/C4) — "
+        f"X axis: time | Y axis: frequency (8–30 Hz)",
         fontsize=11, fontweight="bold"
     )
 
-    cls_data = [(idx_left, "Izquierda", "#2C7BB6"),
-                (idx_right, "Derecha",   "#D7191C")]
+    cls_data = [(idx_left, "Left",  "#2C7BB6"),
+                (idx_right, "Right", "#D7191C")]
     row = 0
     for indices, cls_name, color in cls_data:
         for ch_i, ch_name in enumerate(CHANNELS[:N_CHANNELS]):
@@ -233,10 +232,10 @@ def plot_ersp_examples(subject: int, suffix: str = TRAIN_SUFFIX,
                     extent=[EPOCH_TMIN, EPOCH_TMAX, ERSP_FMIN, ERSP_FMAX]
                 )
                 if col == 0:
-                    ax.set_ylabel(f"{cls_name}\n{ch_name}\nFrecuencia (Hz)",
+                    ax.set_ylabel(f"{cls_name}\n{ch_name}\nFrequency (Hz)",
                                   fontsize=8)
                 if row == n_rows - 1:
-                    ax.set_xlabel("Tiempo (s)", fontsize=8)
+                    ax.set_xlabel("Time (s)", fontsize=8)
                 ax.axvline(0, color="white", linewidth=0.8, linestyle="--")
                 ax.tick_params(labelsize=7)
                 plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04).ax.tick_params(labelsize=6)
@@ -247,7 +246,7 @@ def plot_ersp_examples(subject: int, suffix: str = TRAIN_SUFFIX,
     if save_fig:
         fig_path = FIGURES_DIR / f"ersp_examples_{tag}.png"
         fig.savefig(str(fig_path), dpi=150, bbox_inches="tight")
-        print(f"    Figura guardada en: {fig_path.name}")
+        print(f"    Figure saved to: {fig_path.name}")
         plt.close(fig)
     else:
         plt.show()
@@ -256,13 +255,13 @@ def plot_ersp_examples(subject: int, suffix: str = TRAIN_SUFFIX,
 def plot_ersp_average(subject: int, suffix: str = TRAIN_SUFFIX,
                       save_fig: bool = True):
     """
-    Visualiza el ERSP promedio por clase y canal para un sujeto.
+    Visualise the average ERSP per class and channel for one subject.
     """
     tag = f"S{subject:02d}{suffix}"
     npz_path = DATA_PROC / f"{tag}-ersp.npz"
 
     if not npz_path.exists():
-        print(f"  No se encontró {npz_path.name}.")
+        print(f"  {npz_path.name} not found.")
         return
 
     data = np.load(str(npz_path))
@@ -271,13 +270,13 @@ def plot_ersp_average(subject: int, suffix: str = TRAIN_SUFFIX,
     fig, axes = plt.subplots(N_CHANNELS, 2,
                              figsize=(10, 4 * N_CHANNELS))
     fig.suptitle(
-        f"ERSP promedio por clase — Sujeto {subject:02d}\n"
-        f"(columnas: Izquierda | Derecha — filas: C3, Cz, C4)",
+        f"Average ERSP per class — Subject {subject:02d}\n"
+        f"(columns: Left | Right — rows: C3, Cz, C4)",
         fontsize=11, fontweight="bold"
     )
 
     for ch_i, ch_name in enumerate(CHANNELS[:N_CHANNELS]):
-        for cls_i, (cls_label, cls_name) in enumerate([(0, "Izquierda"), (1, "Derecha")]):
+        for cls_i, (cls_label, cls_name) in enumerate([(0, "Left"), (1, "Right")]):
             ax = axes[ch_i, cls_i]
             mask = y == cls_label
             if mask.sum() == 0:
@@ -290,21 +289,21 @@ def plot_ersp_average(subject: int, suffix: str = TRAIN_SUFFIX,
                 extent=[EPOCH_TMIN, EPOCH_TMAX, ERSP_FMIN, ERSP_FMAX]
             )
             ax.axvline(0, color="white", linewidth=1.0, linestyle="--")
-            ax.axhspan(8, 13, alpha=0.15, color="cyan")    # banda mu
-            ax.axhspan(14, 30, alpha=0.10, color="yellow") # banda beta
+            ax.axhspan(8, 13, alpha=0.15, color="cyan")    # mu band
+            ax.axhspan(14, 30, alpha=0.10, color="yellow") # beta band
             ax.set_title(f"{ch_name} — {cls_name} (n={mask.sum()})", fontsize=9)
-            ax.set_ylabel("Frecuencia (Hz)", fontsize=8)
-            ax.set_xlabel("Tiempo (s)", fontsize=8)
+            ax.set_ylabel("Frequency (Hz)", fontsize=8)
+            ax.set_xlabel("Time (s)", fontsize=8)
             ax.tick_params(labelsize=7)
             plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04,
-                         label="ERSP norm.").ax.tick_params(labelsize=6)
+                         label="Norm. ERSP").ax.tick_params(labelsize=6)
 
     plt.tight_layout()
 
     if save_fig:
         fig_path = FIGURES_DIR / f"ersp_average_{tag}.png"
         fig.savefig(str(fig_path), dpi=150, bbox_inches="tight")
-        print(f"    Figura promedio guardada en: {fig_path.name}")
+        print(f"    Average figure saved to: {fig_path.name}")
         plt.close(fig)
     else:
         plt.show()
@@ -314,18 +313,18 @@ def plot_ersp_average(subject: int, suffix: str = TRAIN_SUFFIX,
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Generación de espectrogramas ERSP — BCI-IV-2b"
+        description="ERSP spectrogram generation — BCI-IV-2b"
     )
     parser.add_argument("--subject", type=str, default="all",
-                        help="Número de sujeto (1–9) o 'all'")
+                        help="Subject number (1–9) or 'all'")
     parser.add_argument("--suffix", type=str, default="both",
                         choices=["T", "E", "both"])
     parser.add_argument("--plot", action="store_true",
-                        help="Generar figuras de ejemplos y promedio")
+                        help="Generate example and average figures")
     args = parser.parse_args()
 
     print("\n══════════════════════════════════════════════")
-    print("  BCI-IV-2b — Módulo de Espectrogramas ERSP")
+    print("  BCI-IV-2b — ERSP Spectrogram Module")
     print("══════════════════════════════════════════════")
 
     subjects = SUBJECTS if args.subject == "all" else [int(args.subject)]
@@ -335,8 +334,8 @@ def main():
         for suf in suffixes:
             epo_path = DATA_PROC / f"S{subj:02d}{suf}-epo.fif"
             if not epo_path.exists():
-                print(f"\n  S{subj:02d}{suf}: épocas no encontradas — "
-                      f"ejecuta preprocessing.py primero.")
+                print(f"\n  S{subj:02d}{suf}: epochs not found — "
+                      f"run preprocessing.py first.")
                 continue
             try:
                 generate_ersp_for_subject(subj, suf)
@@ -346,7 +345,7 @@ def main():
             except Exception as e:
                 print(f"\n  S{subj:02d}{suf}: ERROR — {e}")
 
-    print("\n── Generación de ERSP completada ──\n")
+    print("\n── ERSP generation complete ──\n")
 
 
 if __name__ == "__main__":

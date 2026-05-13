@@ -1,12 +1,12 @@
 """
 evaluate.py
 -----------
-Evaluación comparativa de los modelos entrenados sobre el BCI-IV-2b.
-Genera métricas completas, matriz de confusión y tabla resumen.
+Comparative evaluation of trained models on BCI-IV-2b.
+Generates full metrics, confusion matrix, and summary table.
 
-Uso:
-    python src/evaluate.py                    # evaluar todos los modelos guardados
-    python src/evaluate.py --model spectnet   # evaluar solo SpectNet
+Usage:
+    python src/evaluate.py                    # evaluate all saved models
+    python src/evaluate.py --model spectnet   # evaluate SpectNet only
 """
 
 import argparse
@@ -36,7 +36,7 @@ from models import get_model
 
 @torch.no_grad()
 def predict_all(model, dataset, device) -> tuple:
-    """Obtiene predicciones y etiquetas reales para todo el dataset."""
+    """Obtain predictions and ground-truth labels for the entire dataset."""
     model.eval()
     all_preds, all_labels = [], []
     loader = torch.utils.data.DataLoader(dataset, batch_size=64, shuffle=False)
@@ -49,7 +49,7 @@ def predict_all(model, dataset, device) -> tuple:
 
 
 def compute_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> dict:
-    """Calcula el conjunto completo de métricas de clasificación."""
+    """Compute the full set of classification metrics."""
     return {
         "accuracy":  accuracy_score(y_true, y_pred),
         "precision": precision_score(y_true, y_pred, average="macro", zero_division=0),
@@ -60,30 +60,30 @@ def compute_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> dict:
 
 
 def plot_confusion_matrix(y_true, y_pred, model_name: str, subj_tag: str):
-    """Genera y guarda la matriz de confusión normalizada."""
+    """Generate and save the normalised confusion matrix."""
     cm = confusion_matrix(y_true, y_pred, normalize="true")
     fig, ax = plt.subplots(figsize=(5, 4))
     sns.heatmap(
         cm, annot=True, fmt=".2%", cmap="Blues",
         xticklabels=list(CLASS_NAMES.values()),
         yticklabels=list(CLASS_NAMES.values()),
-        ax=ax, cbar_kws={"label": "Proporción"}
+        ax=ax, cbar_kws={"label": "Proportion"}
     )
-    ax.set_xlabel("Predicción")
-    ax.set_ylabel("Etiqueta real")
-    ax.set_title(f"Matriz de confusión — {model_name.upper()}\n"
-                 f"(normalizada por fila, sujetos: {subj_tag})")
+    ax.set_xlabel("Predicted")
+    ax.set_ylabel("True label")
+    ax.set_title(f"Confusion matrix — {model_name.upper()}\n"
+                 f"(row-normalised, subjects: {subj_tag})")
     plt.tight_layout()
     fig_path = FIGURES_DIR / f"confusion_{model_name}_{subj_tag}.png"
     fig.savefig(str(fig_path), dpi=150, bbox_inches="tight")
     plt.close(fig)
-    print(f"  Matriz de confusión guardada: {fig_path.name}")
+    print(f"  Confusion matrix saved: {fig_path.name}")
 
 
 def evaluate_model(model_name: str, subjects: list = None,
                    device_str: str = DEVICE) -> dict:
     """
-    Carga un modelo guardado y lo evalúa sobre el conjunto de prueba.
+    Load a saved model and evaluate it on the test set.
     """
     if subjects is None:
         subjects = SUBJECTS
@@ -93,14 +93,14 @@ def evaluate_model(model_name: str, subjects: list = None,
 
     model_path = RESULTS_DIR / f"{model_name}_{subj_tag}.pth"
     if not model_path.exists():
-        print(f"  Modelo no encontrado: {model_path.name}")
-        print(f"  Ejecuta primero: python src/train.py --model {model_name}")
+        print(f"  Model not found: {model_path.name}")
+        print(f"  Run first: python src/train.py --model {model_name}")
         return {}
 
-    # Cargar checkpoint
+    # Load checkpoint
     ckpt = torch.load(str(model_path), map_location=device)
 
-    # Instanciar modelo
+    # Instantiate model
     model = get_model(
         model_name,
         n_channels=N_CHANNELS,
@@ -111,18 +111,18 @@ def evaluate_model(model_name: str, subjects: list = None,
     model.load_state_dict(ckpt["state_dict"])
     model.to(device)
 
-    # Dataset de prueba (sesiones 4-5)
+    # Test dataset (sessions 4-5)
     test_ds = ERSPDataset(subjects=subjects, suffix="E")
 
     y_pred, y_true = predict_all(model, test_ds, device)
     metrics = compute_metrics(y_true, y_pred)
 
-    print(f"\n  ── {model_name.upper()} (sujetos: {subj_tag}) ──")
-    print(f"  Exactitud:  {metrics['accuracy']:.1%}")
-    print(f"  Precisión:  {metrics['precision']:.1%}")
-    print(f"  Recall:     {metrics['recall']:.1%}")
-    print(f"  F1-score:   {metrics['f1']:.1%}")
-    print(f"  Kappa:      {metrics['kappa']:.3f}")
+    print(f"\n  ── {model_name.upper()} (subjects: {subj_tag}) ──")
+    print(f"  Accuracy:  {metrics['accuracy']:.1%}")
+    print(f"  Precision: {metrics['precision']:.1%}")
+    print(f"  Recall:    {metrics['recall']:.1%}")
+    print(f"  F1-score:  {metrics['f1']:.1%}")
+    print(f"  Kappa:     {metrics['kappa']:.3f}")
 
     plot_confusion_matrix(y_true, y_pred, model_name, subj_tag)
 
@@ -132,7 +132,7 @@ def evaluate_model(model_name: str, subjects: list = None,
 
 def compare_all_models(subjects: list = None, device_str: str = DEVICE):
     """
-    Evalúa todos los modelos guardados y genera una tabla comparativa.
+    Evaluate all saved models and generate a comparative table.
     """
     if subjects is None:
         subjects = SUBJECTS
@@ -141,7 +141,7 @@ def compare_all_models(subjects: list = None, device_str: str = DEVICE):
     results = []
 
     print("\n══════════════════════════════════════════════")
-    print("  Evaluación comparativa de modelos")
+    print("  Comparative model evaluation")
     print("══════════════════════════════════════════════")
 
     for name in model_names:
@@ -150,44 +150,44 @@ def compare_all_models(subjects: list = None, device_str: str = DEVICE):
             results.append(r)
 
     if not results:
-        print("\n  No hay modelos entrenados para comparar.")
+        print("\n  No trained models found to compare.")
         return
 
-    # Tabla resumen
+    # Summary table
     df = pd.DataFrame(results)
     df = df.rename(columns={
-        "model": "Modelo", "accuracy": "Exactitud",
-        "precision": "Precisión", "recall": "Recall",
-        "f1": "F1-score", "kappa": "Kappa", "n_params": "Parámetros"
+        "model": "Model", "accuracy": "Accuracy",
+        "precision": "Precision", "recall": "Recall",
+        "f1": "F1-score", "kappa": "Kappa", "n_params": "Parameters"
     })
 
-    # Formatear como porcentaje
-    for col in ["Exactitud", "Precisión", "Recall", "F1-score"]:
+    # Format as percentage
+    for col in ["Accuracy", "Precision", "Recall", "F1-score"]:
         if col in df.columns:
             df[col] = df[col].map("{:.1%}".format)
     if "Kappa" in df.columns:
         df["Kappa"] = df["Kappa"].map("{:.3f}".format)
-    if "Parámetros" in df.columns:
-        df["Parámetros"] = df["Parámetros"].map("{:,}".format)
+    if "Parameters" in df.columns:
+        df["Parameters"] = df["Parameters"].map("{:,}".format)
 
-    print("\n\n  ══ Tabla resumen comparativa ══")
+    print("\n\n  ══ Comparative summary table ══")
     print(df.to_string(index=False))
 
-    # Guardar CSV
+    # Save CSV
     subj_tag = "all" if subjects == SUBJECTS else "-".join(map(str, subjects))
-    csv_path = METRICS_DIR / f"resultados_comparativos_{subj_tag}.csv"
+    csv_path = METRICS_DIR / f"comparative_results_{subj_tag}.csv"
     df.to_csv(str(csv_path), index=False)
-    print(f"\n  Tabla guardada: {csv_path.name}")
+    print(f"\n  Table saved: {csv_path.name}")
 
-    # Gráfico de barras comparativo
+    # Comparative bar chart
     df_raw = pd.DataFrame(results)
     _plot_comparison(df_raw, subj_tag)
 
 
 def _plot_comparison(df: pd.DataFrame, subj_tag: str):
-    """Gráfico de barras con exactitud y F1 por modelo."""
+    """Bar chart with accuracy, F1, and kappa per model."""
     metrics = ["accuracy", "f1", "kappa"]
-    labels  = ["Exactitud", "F1-score", "Kappa"]
+    labels  = ["Accuracy", "F1-score", "Kappa"]
     colors  = ["#2C7BB6", "#D7191C", "#1A9641"]
     x = np.arange(len(df))
     width = 0.25
@@ -202,35 +202,35 @@ def _plot_comparison(df: pd.DataFrame, subj_tag: str):
 
     ax.set_xticks(x + width)
     ax.set_xticklabels(df["model"].str.upper(), fontsize=10)
-    ax.set_ylabel("Métrica")
+    ax.set_ylabel("Metric")
     ax.set_ylim([0, 1.1])
     ax.set_title(
-        f"Comparación de modelos CNN — BCI-IV-2b (sujetos: {subj_tag})\n"
-        f"Sesiones 4-5 (evaluación)",
+        f"CNN model comparison — BCI-IV-2b (subjects: {subj_tag})\n"
+        f"Sessions 4-5 (evaluation)",
         fontsize=11
     )
     ax.legend()
     ax.axhline(0.5, color="gray", linewidth=0.6, linestyle="--",
-               label="Azar (50%)")
+               label="Chance (50%)")
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
     plt.tight_layout()
 
-    fig_path = FIGURES_DIR / f"comparacion_modelos_{subj_tag}.png"
+    fig_path = FIGURES_DIR / f"model_comparison_{subj_tag}.png"
     fig.savefig(str(fig_path), dpi=150, bbox_inches="tight")
     plt.close(fig)
-    print(f"  Gráfico comparativo guardado: {fig_path.name}")
+    print(f"  Comparison chart saved: {fig_path.name}")
 
 
 # ── CLI ──────────────────────────────────────────────────────────────────────
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Evaluación de modelos CNN — BCI-IV-2b"
+        description="CNN model evaluation — BCI-IV-2b"
     )
     parser.add_argument("--model", type=str, default=None,
                         choices=["spectnet", "eegnet", "shallowconvnet"],
-                        help="Modelo a evaluar (None = todos)")
+                        help="Model to evaluate (None = all)")
     parser.add_argument("--subjects", type=int, nargs="+", default=None)
     parser.add_argument("--device", type=str, default=DEVICE)
     args = parser.parse_args()

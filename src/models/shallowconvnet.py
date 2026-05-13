@@ -1,9 +1,9 @@
 """
 models/shallowconvnet.py
 ------------------------
-ShallowConvNet adaptado para espectrogramas ERSP 2D.
+ShallowConvNet adapted for 2D ERSP spectrograms.
 
-Referencia original:
+Original reference:
     Schirrmeister R.T. et al., "Deep learning with convolutional neural
     networks for EEG decoding and visualization", Hum. Brain Mapp., 2017.
 """
@@ -15,16 +15,16 @@ import torch.nn.functional as F
 
 class ShallowConvNet(nn.Module):
     """
-    ShallowConvNet adaptado para imágenes ERSP.
+    ShallowConvNet adapted for ERSP images.
 
-    Arquitectura:
-        Conv2D (n_filters_time filtros, kernel temporal)
-        Conv2D (profundidad espacial sobre frecuencia)
-        Activación cuadrática → AvgPool → Log → Dropout
+    Architecture:
+        Conv2D (n_filters_time filters, temporal kernel)
+        Conv2D (spatial depth over frequency)
+        Squared activation → AvgPool → Log → Dropout
         Flatten → FC(n_classes)
 
-    Entrada: (batch, n_channels, n_freq_bins, n_time_bins)
-    Salida:  (batch, n_classes)
+    Input:  (batch, n_channels, n_freq_bins, n_time_bins)
+    Output: (batch, n_classes)
     """
 
     def __init__(self,
@@ -39,7 +39,7 @@ class ShallowConvNet(nn.Module):
                  dropout: float = 0.5):
         super().__init__()
 
-        # ── Convolución temporal ──
+        # ── Temporal convolution ──
         self.conv_time = nn.Conv2d(
             in_channels=n_channels,
             out_channels=n_filters_time,
@@ -47,7 +47,7 @@ class ShallowConvNet(nn.Module):
             bias=False
         )
 
-        # ── Convolución frecuencial (espacial) ──
+        # ── Frequency (spatial) convolution ──
         self.conv_spat = nn.Conv2d(
             in_channels=n_filters_time,
             out_channels=n_filters_time,
@@ -76,10 +76,10 @@ class ShallowConvNet(nn.Module):
         x = self.conv_time(x)
         x = self.conv_spat(x)
         x = self.bn(x)
-        # Activación cuadrática (característica de ShallowConvNet)
+        # Squared activation (signature of ShallowConvNet)
         x = x ** 2
         x = self.pool(x)
-        # Log-activación + clamping para estabilidad numérica
+        # Log-activation + clamping for numerical stability
         x = torch.log(torch.clamp(x, min=1e-6))
         x = self.drop(x)
         return x.flatten(start_dim=1)
@@ -94,7 +94,7 @@ class ShallowConvNet(nn.Module):
 
 if __name__ == "__main__":
     model = ShallowConvNet(n_channels=3, n_freq=22, n_time=128, n_classes=2)
-    print(f"ShallowConvNet — Parámetros entrenables: {model.count_parameters():,}")
+    print(f"ShallowConvNet — Trainable parameters: {model.count_parameters():,}")
     x = torch.randn(16, 3, 22, 128)
     out = model(x)
-    print(f"Entrada: {x.shape}  →  Salida: {out.shape}")
+    print(f"Input: {x.shape}  →  Output: {out.shape}")
