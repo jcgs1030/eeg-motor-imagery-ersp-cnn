@@ -1,6 +1,6 @@
 # EEG Motor Imagery Classification — ERSP + CNN on BCI Competition IV-2b
 
-[![Python](https://img.shields.io/badge/Python-3.10%2B-blue?logo=python)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/Python-3.12-blue?logo=python)](https://www.python.org/)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.1%2B-orange?logo=pytorch)](https://pytorch.org/)
 [![MNE](https://img.shields.io/badge/MNE--Python-1.6%2B-green)](https://mne.tools/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -36,13 +36,15 @@ This repository contains the full implementation developed as part of the Master
 ```
 eeg-motor-imagery-ersp-cnn/
 ├── README.md
-├── requirements.txt
+├── pyproject.toml
+├── uv.lock
+├── .python-version
 ├── .gitignore
 ├── data/
-│   ├── raw/               ← place your GDF files here (B01T.gdf ... B09E.gdf)
+│   ├── raw/               ← place your GDF files here (B0101T.gdf ... B0905E.gdf)
 │   └── processed/         ← auto-generated epochs (.fif) and spectrograms (.npz)
 ├── notebooks/
-│   └── 01_explore_dataset.ipynb
+│   └── 01_dataset_exploration.ipynb
 ├── src/
 │   ├── config.py          ← all pipeline parameters (single source of truth)
 │   ├── preprocessing.py   ← GDF loading, bandpass filter, ICA, epoching
@@ -106,18 +108,7 @@ uv sync
 ```
 
 This creates a virtual environment and installs all dependencies automatically.
-**Requires [uv](https://docs.astral.sh/uv/) and Python 3.10+.**
-
-<details>
-<summary>Alternative: pip</summary>
-
-```bash
-python -m venv venv
-source venv/bin/activate        # Linux / macOS
-venv\Scripts\activate           # Windows
-pip install -r requirements.txt
-```
-</details>
+**Requires [uv](https://docs.astral.sh/uv/) and Python 3.12.**
 
 ---
 
@@ -126,28 +117,31 @@ pip install -r requirements.txt
 ### 1. Place dataset files in `data/raw/`
 
 ```
-B01T.gdf  B01E.gdf  ...  B09T.gdf  B09E.gdf
+B0101T.gdf  B0102T.gdf  B0103T.gdf  B0104E.gdf  B0105E.gdf
+...
+B0901T.gdf  B0902T.gdf  B0903T.gdf  B0904E.gdf  B0905E.gdf
 ```
+9 subjects × 5 sessions = 45 files total.
 
 ### 2. Verify dataset
 ```bash
-uv run python src/preprocessing.py --verify
+uv run preprocess --verify
 ```
 
 ### 3. Explore (notebook)
 ```bash
-uv run jupyter notebook notebooks/01_explore_dataset.ipynb
+uv run jupyter notebook notebooks/01_dataset_exploration.ipynb
 ```
 
 ### 4. Full pipeline
 
 ```bash
-uv run python src/preprocessing.py --subject all --suffix both
-uv run python src/ersp.py --subject all --suffix both --plot
-uv run python src/train.py --model spectnet --all_subjects
-uv run python src/train.py --model eegnet --all_subjects
-uv run python src/train.py --model shallowconvnet --all_subjects
-uv run python src/evaluate.py
+uv run preprocess --subject all --suffix both
+uv run ersp --subject all --suffix both --plot
+uv run train --model spectnet --all_subjects
+uv run train --model eegnet --all_subjects
+uv run train --model shallowconvnet --all_subjects
+uv run evaluate
 ```
 
 ---
