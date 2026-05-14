@@ -65,17 +65,14 @@ def compute_ersp_image(epoch_data: np.ndarray,
     )
     power = np.abs(Zxx) ** 2  # (n_freqs_stft, n_times_stft)
 
-    # ── STFT of the baseline ──
-    _, _, Zxx_bl = stft(
-        baseline_data,
-        fs=sfreq,
-        window="hann",
-        nperseg=STFT_WIN_LEN,
-        noverlap=STFT_WIN_LEN - STFT_HOP,
-        padded=True
-    )
-    power_bl = np.abs(Zxx_bl) ** 2  # (n_freqs_stft, n_times_bl)
-    baseline_mean = power_bl.mean(axis=-1, keepdims=True) + 1e-12  # avoid div/0
+    # ── Baseline mean from STFT time bins within the pre-stimulus window ──
+    # baseline_data length / sfreq gives the baseline duration in seconds;
+    # times_stft are seconds from signal start so we select bins up to that point.
+    bl_duration = len(baseline_data) / sfreq
+    bl_mask = times_stft <= bl_duration
+    if bl_mask.sum() == 0:
+        bl_mask[0] = True  # fallback: use first frame
+    baseline_mean = power[:, bl_mask].mean(axis=-1, keepdims=True) + 1e-12
 
     # ── Divisive ERSP (in dB) ──
     ersp = 10 * np.log10(power / baseline_mean + 1e-12)

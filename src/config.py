@@ -36,9 +36,13 @@ N_CHANNELS    = len(CHANNELS)
 SFREQ         = 250   # Hz
 
 # BCI-IV-2b event codes
+# Training sessions (1-3): offline paradigm
 EVENT_LEFT    = 769   # left-hand imagery → class 0
 EVENT_RIGHT   = 770   # right-hand imagery → class 1
-EVENT_LABELS  = {769: 0, 770: 1}
+# Evaluation sessions (4-5): online feedback paradigm uses different codes
+EVENT_LEFT_ONLINE  = 781
+EVENT_RIGHT_ONLINE = 783
+EVENT_LABELS  = {769: 0, 770: 1, 781: 0, 783: 1}
 CLASS_NAMES   = {0: "Left", 1: "Right"}
 
 # ── Preprocessing ─────────────────────────────────────────────────────────────

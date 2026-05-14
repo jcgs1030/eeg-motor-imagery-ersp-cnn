@@ -27,13 +27,17 @@ from config import (
     DATA_RAW, DATA_PROC, FIGURES_DIR,
     SUBJECTS, TRAIN_SUFFIX, EVAL_SUFFIX, TRAIN_SESSIONS, TEST_SESSIONS,
     CHANNELS, SFREQ,
-    EVENT_LEFT, EVENT_RIGHT, EVENT_LABELS, CLASS_NAMES,
+    EVENT_LEFT, EVENT_RIGHT, EVENT_LEFT_ONLINE, EVENT_RIGHT_ONLINE,
+    EVENT_LABELS, CLASS_NAMES,
     FILT_LOW, FILT_HIGH, FILT_METHOD,
     EPOCH_TMIN, EPOCH_TMAX, BASELINE, REJECT_THRESH,
     ICA_N_COMPS, ICA_METHOD, ICA_SEED
 )
 
 SESSION_MAP = {TRAIN_SUFFIX: TRAIN_SESSIONS, EVAL_SUFFIX: TEST_SESSIONS}
+
+# Canonical event IDs used for all sessions (GDF internal IDs differ between sessions)
+CANONICAL_EVENT_ID = {"left": 1, "right": 2}
 
 # Suppress MNE logs (keep only warnings and errors)
 mne.set_log_level("WARNING")
@@ -178,21 +182,26 @@ def extract_epochs(raw: mne.io.Raw) -> mne.Epochs:
     # Extract events from the stimulus channel
     events, event_id = mne.events_from_annotations(raw, verbose=False)
 
-    # Filter only target events (769 and 770)
-    target_ids = {
-        "left":  event_id.get(str(EVENT_LEFT),  event_id.get("769",  None)),
-        "right": event_id.get(str(EVENT_RIGHT), event_id.get("770", None)),
-    }
-    # Remove IDs not found
-    target_ids = {k: v for k, v in target_ids.items() if v is not None}
+    # Filter only target events — training (769/770) or evaluation (781/783)
+    left_keys  = [str(EVENT_LEFT),  str(EVENT_LEFT_ONLINE),  "769", "781"]
+    right_keys = [str(EVENT_RIGHT), str(EVENT_RIGHT_ONLINE), "770", "783"]
+
+    target_ids = {}
+    for k in left_keys:
+        if k in event_id:
+            target_ids["left"] = event_id[k]
+            break
+    for k in right_keys:
+        if k in event_id:
+            target_ids["right"] = event_id[k]
+            break
 
     if not target_ids:
-        # Try with numeric keys directly
-        target_ids = {}
+        # Last-resort: scan by keyword
         for k, v in event_id.items():
-            if "769" in str(k) or "left" in str(k).lower():
+            if "left" in str(k).lower():
                 target_ids["left"] = v
-            elif "770" in str(k) or "right" in str(k).lower():
+            elif "right" in str(k).lower():
                 target_ids["right"] = v
 
     if not target_ids:
@@ -214,6 +223,19 @@ def extract_epochs(raw: mne.io.Raw) -> mne.Epochs:
         verbose=False
     )
 
+    return epochs
+
+
+def normalize_event_ids(epochs: mne.Epochs) -> mne.Epochs:
+    """Remap per-session GDF event IDs to canonical {left:1, right:2} so
+    mne.concatenate_epochs does not fail on ID mismatches across sessions."""
+    for label, new_id in CANONICAL_EVENT_ID.items():
+        if label in epochs.event_id:
+            old_id = epochs.event_id[label]
+            if old_id != new_id:
+                epochs.events[epochs.events[:, 2] == old_id, 2] = new_id
+    epochs.event_id = {k: CANONICAL_EVENT_ID[k]
+                       for k in CANONICAL_EVENT_ID if k in epochs.event_id}
     return epochs
 
 
@@ -261,6 +283,7 @@ def process_subject(subject: int, suffix: str,
         # 4. Epoching
         try:
             epochs = extract_epochs(raw)
+            epochs = normalize_event_ids(epochs)
             all_epochs.append(epochs)
             n_left  = len(epochs["left"])  if "left"  in epochs.event_id else 0
             n_right = len(epochs["right"]) if "right" in epochs.event_id else 0

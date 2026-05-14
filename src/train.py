@@ -103,7 +103,7 @@ def train_model(model_name: str,
                            lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
     criterion = nn.CrossEntropyLoss()
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode="min", factor=0.5, patience=10, verbose=False
+        optimizer, mode="min", factor=0.5, patience=10
     )
 
     # ── History ──
