@@ -13,6 +13,7 @@ Usage from terminal:
 
 import argparse
 import sys
+import warnings
 from pathlib import Path
 
 import mne
@@ -102,8 +103,16 @@ def load_raw(subject: int, session: int) -> mne.io.Raw:
             f"Verify the file is in {DATA_RAW}/"
         )
 
-    # Load with MNE (includes EEG and EOG channels)
-    raw = mne.io.read_raw_gdf(str(path), preload=True, verbose=False)
+    # Load with MNE (includes EEG and EOG channels).
+    # BCI-IV-2b GDF headers store hardware filter metadata (0.5–100 Hz) that
+    # MNE interprets as highpass > lowpass, triggering a harmless RuntimeWarning.
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message=".*Highpass cutoff frequency.*greater than lowpass.*",
+            category=RuntimeWarning,
+        )
+        raw = mne.io.read_raw_gdf(str(path), preload=True, verbose=False)
 
     # Select only channels of interest (C3, Cz, C4)
     # BCI-IV-2b names EEG channels as "EEG:C3", "EEG:Cz", "EEG:C4"
