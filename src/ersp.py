@@ -84,12 +84,15 @@ def compute_ersp_image(epoch_data: np.ndarray,
     # ── Resize to IMG_SIZE with interpolation ──
     ersp_resized = _resize_2d(ersp_roi, IMG_FREQ_BINS, IMG_TIME_BINS)
 
-    # ── Normalise to [0, 1] ──
-    vmin, vmax = ersp_resized.min(), ersp_resized.max()
-    if vmax - vmin > 1e-8:
-        ersp_norm = (ersp_resized - vmin) / (vmax - vmin)
-    else:
-        ersp_norm = np.zeros_like(ersp_resized)
+    # Clip to a fixed dB range and scale to [0, 1].
+    # Using a per-trial min-max would destroy inter-trial comparability:
+    # the CNN needs to see that ERD (< 0 dB) and ERS (> 0 dB) differ
+    # consistently across trials to learn the Left vs Right lateralization.
+    # ±6 dB covers the typical ERD/ERS magnitude in motor imagery.
+    # After scaling: 0.5 = no change, < 0.5 = ERD, > 0.5 = ERS.
+    DB_CLIP = 6.0
+    ersp_clipped = np.clip(ersp_resized, -DB_CLIP, DB_CLIP)
+    ersp_norm = (ersp_clipped + DB_CLIP) / (2.0 * DB_CLIP)
 
     return ersp_norm.astype(np.float32)
 

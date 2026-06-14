@@ -220,13 +220,17 @@ def extract_epochs(raw: mne.io.Raw) -> mne.Epochs:
             "Check the event IDs in the GDF file."
         )
 
+    # baseline=None: do not apply MNE amplitude baseline correction here.
+    # The ERSP formula (P/P_baseline) already handles spectral baseline
+    # normalisation. Applying amplitude correction first would make the
+    # baseline window near-zero mean, distorting the power reference.
     epochs = mne.Epochs(
         raw,
         events,
         event_id=target_ids,
         tmin=EPOCH_TMIN,
         tmax=EPOCH_TMAX,
-        baseline=BASELINE,
+        baseline=None,
         reject={"eeg": REJECT_THRESH},
         preload=True,
         verbose=False
