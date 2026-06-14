@@ -36,30 +36,42 @@ This repository contains the full implementation developed as part of the Master
 ```
 eeg-motor-imagery-ersp-cnn/
 ├── README.md
+├── EXPERIMENTS.md             ← full experimental log with results and analysis
 ├── pyproject.toml
 ├── uv.lock
 ├── .python-version
-├── .gitignore
 ├── data/
-│   ├── raw/               ← place your GDF files here (B0101T.gdf ... B0905E.gdf)
-│   └── processed/         ← auto-generated epochs (.fif) and spectrograms (.npz)
+│   ├── raw/                   ← place your GDF files here (B0101T.gdf ... B0905E.gdf)
+│   └── processed/             ← auto-generated epochs (.fif) and spectrograms (.npz)
 ├── notebooks/
-│   └── 01_dataset_exploration.ipynb
+│   ├── 01_dataset_exploration.ipynb
+│   └── 02_gdf_visual_exploration.ipynb
 ├── src/
-│   ├── config.py          ← all pipeline parameters (single source of truth)
-│   ├── preprocessing.py   ← GDF loading, bandpass filter, ICA, epoching
-│   ├── ersp.py            ← STFT-based ERSP spectrogram generation
-│   ├── dataset.py         ← PyTorch Dataset / DataLoader
-│   ├── train.py           ← training loop with early stopping
-│   ├── evaluate.py        ← metrics, confusion matrix, model comparison
+│   ├── config.py              ← all pipeline parameters (single source of truth)
+│   ├── preprocessing.py       ← GDF loading, bandpass filter, epoching
+│   ├── ersp.py                ← STFT-based ERSP spectrogram generation
+│   ├── dataset.py             ← PyTorch Dataset / DataLoader
+│   ├── train.py               ← CNN training — subject-pooled
+│   ├── train_subject_specific.py  ← CNN training — one model per subject
+│   ├── train_csp_lda.py       ← classical baseline: CSP + LDA / SVM
+│   ├── train_ea_csp_lda.py    ← domain adaptation: EA + CSP + LDA / SVM
+│   ├── evaluate.py            ← metrics, confusion matrix, model comparison
 │   └── models/
-│       ├── __init__.py
-│       ├── eegnet.py      ← EEGNet (Lawhern et al., 2018)
-│       ├── shallowconvnet.py   ← ShallowConvNet (Schirrmeister et al., 2017)
-│       └── spectnet.py    ← SpectNet (Ruffini et al., 2018)
+│       ├── eegnet.py          ← EEGNet (Lawhern et al., 2018)
+│       ├── shallowconvnet.py  ← ShallowConvNet (Schirrmeister et al., 2017)
+│       └── spectnet.py        ← SpectNet (Ruffini et al., 2018)
 └── results/
-    ├── figures/
-    └── metrics/
+    ├── figures/               ← Exp 1: pooled CNN
+    ├── metrics/
+    ├── subject_specific/      ← Exp 2: subject-specific CNN
+    │   ├── figures/
+    │   └── metrics/
+    ├── csp_lda/               ← Exp 3: CSP + LDA / SVM
+    │   ├── figures/
+    │   └── metrics/
+    └── ea_csp_lda/            ← Exp 4: EA + CSP + LDA / SVM
+        ├── figures/
+        └── metrics/
 ```
 
 ---
@@ -177,15 +189,25 @@ All input: `(batch, 3, 22, 128)` — 3 channels × 22 freq. bins × 128 time ste
 
 ## Results
 
-> To be completed after the experimental phase.
+Full experimental narrative in [`EXPERIMENTS.md`](EXPERIMENTS.md).
 
-| Method | Mean Acc. (%) | Kappa | F1-score |
-|--------|-------------|-------|----------|
-| LDA | — | — | — |
-| SVM + CSP | — | — | — |
-| EEGNet | — | — | — |
-| ShallowConvNet | — | — | — |
-| SpectNet | — | — | — |
+All experiments use the offline→online protocol (sessions 1–3 train, sessions 4–5 test).
+Results are mean ± std across 9 subjects (subject-specific protocol).
+
+| Method | Experiment | Mean Acc. | Kappa |
+|--------|-----------|-----------|-------|
+| EEGNet (subject-specific) | CNN SS | 49.8% ± 0.9% | −0.005 |
+| ShallowConvNet (subject-specific) | CNN SS | 50.2% ± 1.6% | +0.003 |
+| SpectNet (subject-specific) | CNN SS | 49.9% ± 1.8% | −0.002 |
+| CSP + LDA | Classical | 49.9% ± 0.9% | −0.002 |
+| CSP + SVM | Classical | 49.7% ± 1.1% | −0.006 |
+| EA + CSP + LDA | Domain adapt. | 49.9% ± 0.9% | −0.002 |
+| EA + CSP + SVM | Domain adapt. | 49.7% ± 1.1% | −0.006 |
+
+> **Key finding:** All methods without domain adaptation reach chance level (~50%)
+> on sessions 4–5. The bottleneck is the structural domain shift between offline
+> (sessions 1–3) and online feedback (sessions 4–5) paradigms in BCI-IV-2b.
+> Euclidean Alignment (Exp 4) is the next step to address this shift.
 
 ---
 
