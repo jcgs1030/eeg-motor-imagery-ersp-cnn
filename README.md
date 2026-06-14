@@ -189,39 +189,80 @@ All input: `(batch, 3, 22, 128)` — 3 channels × 22 freq. bins × 128 time ste
 
 ## Results
 
-Full experimental narrative in [`EXPERIMENTS.md`](EXPERIMENTS.md).
+Full experimental narrative and per-experiment analysis in [`EXPERIMENTS.md`](EXPERIMENTS.md).
 
-All experiments use the offline→online protocol (sessions 1–3 train, sessions 4–5 test).
-Results are mean ± std across 9 subjects (subject-specific protocol).
+**Protocol:** Sessions 1–3 (offline, no feedback) → train | Sessions 4–5 (online, with feedback) → test.  
+**Metric:** Mean ± std across 9 subjects, subject-specific models (one model per subject).  
+**Chance level:** 50% (balanced binary classification).
 
-| Method | Experiment | Mean Acc. | Kappa |
-|--------|-----------|-----------|-------|
-| EEGNet (subject-specific) | CNN SS | 49.8% ± 0.9% | −0.005 |
-| ShallowConvNet (subject-specific) | CNN SS | 50.2% ± 1.6% | +0.003 |
-| SpectNet (subject-specific) | CNN SS | 49.9% ± 1.8% | −0.002 |
-| CSP + LDA | Classical | 49.9% ± 0.9% | −0.002 |
-| CSP + SVM | Classical | 49.7% ± 1.1% | −0.006 |
-| EA + CSP + LDA | Domain adapt. | 49.9% ± 0.9% | −0.002 |
-| EA + CSP + SVM | Domain adapt. | 49.7% ± 1.1% | −0.006 |
-| FBCSP + LDA | Filter bank | 50.2% ± 1.2% | +0.005 |
-| FBCSP + SVM | Filter bank | 50.3% ± 0.4% | +0.006 |
-| Riem-MDM | Riemannian | 50.0% ± 1.6% | −0.000 |
-| Riem-TS+LDA | Riemannian | 49.9% ± 1.4% | −0.002 |
+### Experiment 1 — CNN Subject-Pooled (all 9 subjects concatenated)
 
-> **Key finding:** All methods without domain adaptation reach chance level (~50%)
-> on sessions 4–5. The bottleneck is the structural domain shift between offline
-> (sessions 1–3) and online feedback (sessions 4–5) paradigms in BCI-IV-2b.
-> Euclidean Alignment (Exp 4) is the next step to address this shift.
+| Model | Accuracy | F1-score | Kappa |
+|---|---|---|---|
+| EEGNet | 48.3% | 47.9% | −0.033 |
+| ShallowConvNet | 49.6% | 49.2% | −0.008 |
+| SpectNet | 48.9% | 48.9% | −0.023 |
+
+### Experiment 2 — CNN Subject-Specific
+
+| Model | Accuracy | F1-score | Kappa |
+|---|---|---|---|
+| EEGNet | 49.8% ± 0.9% | 45.4% ± 6.9% | −0.005 ± 0.017 |
+| ShallowConvNet | 50.2% ± 1.6% | 50.0% ± 1.7% | +0.003 ± 0.033 |
+| SpectNet | 49.9% ± 1.8% | 47.1% ± 5.9% | −0.002 ± 0.036 |
+
+### Experiment 3 — Classical Baseline: CSP
+
+| Classifier | Accuracy | F1-score | Kappa |
+|---|---|---|---|
+| CSP + LDA | 49.9% ± 0.9% | 48.2% ± 2.4% | −0.002 ± 0.019 |
+| CSP + SVM | 49.7% ± 1.1% | 48.1% ± 2.0% | −0.006 ± 0.023 |
+
+### Experiment 4 — Domain Adaptation: Euclidean Alignment + CSP
+
+| Classifier | Accuracy | F1-score | Kappa |
+|---|---|---|---|
+| EA + CSP + LDA | 49.9% ± 0.9% | 48.2% ± 2.4% | −0.002 ± 0.019 |
+| EA + CSP + SVM | 49.7% ± 1.1% | 48.1% ± 2.0% | −0.006 ± 0.023 |
+
+### Experiment 5a — Filter Bank CSP (FBCSP)
+
+| Classifier | Accuracy | F1-score | Kappa |
+|---|---|---|---|
+| FBCSP + LDA | 50.2% ± 1.2% | 49.5% ± 1.6% | +0.005 ± 0.025 |
+| FBCSP + SVM | 50.3% ± 0.4% | 48.9% ± 2.6% | +0.006 ± 0.009 |
+
+### Experiment 5b — Riemannian Geometry (MDM / TS+LDA)
+
+| Classifier | Accuracy | F1-score | Kappa |
+|---|---|---|---|
+| Riem-MDM | 50.0% ± 1.6% | 47.9% ± 3.7% | −0.000 ± 0.032 |
+| Riem-TS+LDA | 49.9% ± 1.4% | 48.4% ± 2.1% | −0.002 ± 0.028 |
+
+### Key Finding
+
+All 11 methods across 5 experiments converge to chance level (~50%) on sessions 4–5.
+The bottleneck is the **structural domain shift** between the offline training paradigm
+(sessions 1–3, no feedback) and the online evaluation paradigm (sessions 4–5, with
+visual feedback), not the choice of model or feature extraction method.
+
+See [`results/riemannian/figures/comparison_all_methods.png`](results/riemannian/figures/comparison_all_methods.png)
+for the full visual comparison across all experiments.
 
 ---
 
 ## References
 
 - Leeb, R. et al. (2008). *BCI Competition 2008 – Graz Data Set B*. Graz University of Technology.
-- Lawhern, V.J. et al. (2018). *EEGNet*. J. Neural Eng., 15(5), 056013.
-- Schirrmeister, R.T. et al. (2017). *Deep learning with CNNs for EEG decoding*. Hum. Brain Mapp., 38(11).
-- Ruffini, G. et al. (2018). *Deep learning using EEG spectrograms for RBD prognosis*. arXiv.
-- Gramfort, A. et al. (2014). *MNE software for MEG and EEG data*. NeuroImage, 86.
+- Lawhern, V.J. et al. (2018). *EEGNet: A compact convolutional neural network for EEG-based BCI*. J. Neural Eng., 15(5), 056013.
+- Schirrmeister, R.T. et al. (2017). *Deep learning with convolutional neural networks for EEG decoding*. Hum. Brain Mapp., 38(11).
+- Ruffini, G. et al. (2018). *Deep learning using EEG spectrograms for prognosis of neurodegeneration*. arXiv.
+- Ang, K.K. et al. (2008). *Filter Bank Common Spatial Pattern (FBCSP) algorithm*. Proc. IEEE IJCNN.
+- Barachant, A. et al. (2012). *Multiclass BCI classification by Riemannian geometry*. IEEE TBME, 59(4).
+- Barachant, A. et al. (2013). *Classification of covariance matrices using a Riemannian-based kernel*. Neurocomputing, 112.
+- He, H. & Wu, D. (2019). *Transfer learning for EEG-based BCI: A review*. IEEE TNSRE, 27(1).
+- He, H. et al. (2020). *Transfer learning for BCI: A Euclidean space data alignment approach*. IEEE TNSRE, 68(6).
+- Gramfort, A. et al. (2014). *MNE software for processing MEG and EEG data*. NeuroImage, 86.
 
 ---
 
