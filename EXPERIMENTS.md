@@ -205,6 +205,82 @@ classifiers) would be required to bridge the offline→online gap for this datas
 
 ---
 
+## Experiment 5a — Filter Bank CSP (FBCSP)
+
+**Script:** `src/train_fbcsp.py`
+**Results:** `results/fbcsp/figures/`, `results/fbcsp/metrics/`
+
+### Design
+Instead of applying CSP to the full 8–30 Hz band, FBCSP decomposes the
+signal into 7 overlapping sub-bands of 4 Hz width (4–32 Hz) and applies
+CSP independently to each. Log-variance features from all bands are
+concatenated (7 × 2 = 14 features) before classification.
+
+| Parameter | Value |
+|---|---|
+| Filter bank | 7 bands: [4-8], [8-12], [12-16], [16-20], [20-24], [24-28], [28-32] Hz |
+| Filter type | 5th-order Butterworth, zero-phase (filtfilt) |
+| CSP components per band | 2 |
+| Total features | 14 |
+
+### Results (mean ± std across 9 subjects)
+
+| Classifier | Accuracy | Kappa |
+|---|---|---|
+| FBCSP+LDA | 50.2% ± 1.2% | +0.005 ± 0.025 |
+| FBCSP+SVM | 50.3% ± 0.4% | +0.006 ± 0.009 |
+
+### Analysis
+FBCSP marginally improves over broad-band CSP (49.9% → 50.2%) but the
+improvement is not meaningful — both remain at chance level. The multi-band
+feature enrichment does not compensate for the offline→online distributional
+shift. Notably, S02 achieves 53% with FBCSP+LDA, showing that individual
+subjects may have stronger band-specific ERD/ERS patterns, but the effect
+is not consistent across the cohort.
+
+---
+
+## Experiment 5b — Riemannian Geometry (MDM / TS+LDA)
+
+**Script:** `src/train_riemannian.py`
+**Results:** `results/riemannian/figures/`, `results/riemannian/metrics/`
+
+### Design
+Riemannian methods operate on the covariance matrices of EEG epochs as
+points on the manifold of Symmetric Positive Definite (SPD) matrices,
+using geodesic distances that are invariant to linear signal transformations.
+
+Two classifiers:
+
+- **MDM (Minimum Distance to Mean):** Computes the Riemannian mean per class
+  and assigns test trials to the nearest class mean by geodesic distance.
+- **TS+LDA (Tangent Space + LDA):** Projects covariance matrices to the
+  tangent space at the Riemannian training mean, then applies LDA.
+
+Covariance estimator: Ledoit-Wolf regularisation (lwf) for numerical stability
+with 3-channel data.
+
+### Results (mean ± std across 9 subjects)
+
+| Classifier | Accuracy | Kappa |
+|---|---|---|
+| Riem-MDM | 50.0% ± 1.6% | −0.000 ± 0.032 |
+| Riem-TS+LDA | 49.9% ± 1.4% | −0.002 ± 0.028 |
+
+### Analysis
+Despite the theoretical robustness of Riemannian methods to inter-session
+variability, performance remains at chance. The congruence invariance of
+geodesic distances does not help here because the domain shift is not a
+linear transformation of the covariance structure — it reflects a fundamentally
+different neural process (feedback-modulated imagery vs. offline imagery).
+
+The collective result across Experiments 3–5b (CSP, EA, FBCSP, MDM, TS+LDA)
+constitutes strong evidence that no standard signal-processing method can
+bridge the offline→online gap in BCI-IV-2b using sessions 1–3 as training
+data without any online adaptation.
+
+---
+
 ## Cross-Experiment Comparison
 
 | Method | Experiment | Accuracy (mean) | Kappa (mean) |
@@ -217,8 +293,12 @@ classifiers) would be required to bridge the offline→online gap for this datas
 | SpectNet (subject-specific) | 2 | 49.9% | −0.002 |
 | CSP+LDA | 3 | 49.9% | −0.002 |
 | CSP+SVM | 3 | 49.7% | −0.006 |
-| EA + CSP+LDA | 4 | — | — |
-| EA + CSP+SVM | 4 | — | — |
+| EA + CSP+LDA | 4 | 49.9% | −0.002 |
+| EA + CSP+SVM | 4 | 49.7% | −0.006 |
+| FBCSP+LDA | 5a | 50.2% | +0.005 |
+| FBCSP+SVM | 5a | 50.3% | +0.006 |
+| Riem-MDM | 5b | 50.0% | −0.000 |
+| Riem-TS+LDA | 5b | 49.9% | −0.002 |
 
 ---
 

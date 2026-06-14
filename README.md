@@ -203,6 +203,10 @@ Results are mean ± std across 9 subjects (subject-specific protocol).
 | CSP + SVM | Classical | 49.7% ± 1.1% | −0.006 |
 | EA + CSP + LDA | Domain adapt. | 49.9% ± 0.9% | −0.002 |
 | EA + CSP + SVM | Domain adapt. | 49.7% ± 1.1% | −0.006 |
+| FBCSP + LDA | Filter bank | 50.2% ± 1.2% | +0.005 |
+| FBCSP + SVM | Filter bank | 50.3% ± 0.4% | +0.006 |
+| Riem-MDM | Riemannian | 50.0% ± 1.6% | −0.000 |
+| Riem-TS+LDA | Riemannian | 49.9% ± 1.4% | −0.002 |
 
 > **Key finding:** All methods without domain adaptation reach chance level (~50%)
 > on sessions 4–5. The bottleneck is the structural domain shift between offline
