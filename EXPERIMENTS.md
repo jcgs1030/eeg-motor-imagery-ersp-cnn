@@ -7,6 +7,46 @@
 
 ---
 
+## Critical Bug Fix — Evaluation Label Correction
+
+> **All results from Experiments 1–5b recorded prior to this fix were invalid.**
+> The true fix and corrected results are documented here.
+
+### Root cause
+
+The evaluation GDF files (`B*04E.gdf`, `B*05E.gdf`) do **not** contain the true class
+labels (left/right). The BCI Competition IV intentionally withheld evaluation labels,
+distributing them in separate files. The GDF files contain only generic event types:
+
+- `781` — BCI feedback (continuous, fires in every trial)
+- `783` — cue onset ("class unknown" in the competition protocol)
+
+The original code mapped `781→left` and `783→right` (treating event *types* as class
+*labels*). Since both events appear in every single trial in a fixed order, this forced
+every classifier to output ~50% regardless of the EEG content.
+
+### Evidence
+
+A 5-fold CV using only the training sessions (real labels) immediately confirmed the
+signal is learnable: S01=70.5%, S04=90.7%, S08=68.4% (CSP+LDA). The pipeline,
+filtering, and feature extraction were all correct — only the evaluation labels were wrong.
+
+### Fix applied (this session)
+
+- **`src/eval_labels.py`** — retrieves the true evaluation labels from MOABB
+  (`BNCI2014_004`), which bundles the official competition labels. Labels are cached to
+  `data/processed/eval_labels.npz` (one download, then local cache).
+- **`src/config.py`** — removed the incorrect `781→left, 783→right` mapping. Added
+  `EVENT_CUE_EVAL = 783` (used for epoch alignment only; class is assigned externally).
+- **`src/preprocessing.py`** — new `extract_epochs_eval()` function: aligns evaluation
+  epochs to event `783` (the actual cue onset), then assigns the MOABB labels in
+  chronological order, using `epochs.selection` to account for any artifact-rejected trials.
+- All data regenerated: `S0xE-epo.fif`, `S0xE-ersp.npz`, all results CSVs and figures.
+
+### Post-fix validation: S04 CSP+LDA = 92.5% (was 49%) ✓
+
+---
+
 ## Preprocessing Pipeline (all experiments)
 
 **Script:** `src/preprocessing.py`
@@ -105,20 +145,20 @@ One model trained per (architecture, subject) pair using only that subject's
 own sessions 1–3. Evaluated on that subject's sessions 4–5.
 This is the standard intra-subject protocol in the BCI literature.
 
-### Results (mean ± std across 9 subjects)
+### Results (mean ± std across 9 subjects) — **corrected labels**
 
-| Model | Accuracy | Kappa |
-|---|---|---|
-| EEGNet | 49.8% ± 0.9% | −0.005 ± 0.017 |
-| ShallowConvNet | 50.2% ± 1.6% | +0.003 ± 0.033 |
-| SpectNet | 49.9% ± 1.8% | −0.002 ± 0.036 |
+| Model | Accuracy | F1-score | Kappa |
+|---|---|---|---|
+| EEGNet | 72.6% ± 15.6% | 68.5% ± 21.9% | 0.451 ± 0.312 |
+| ShallowConvNet | 70.2% ± 14.3% | 70.1% ± 14.3% | 0.404 ± 0.286 |
+| SpectNet | 73.3% ± 14.8% | 70.8% ± 18.9% | 0.465 ± 0.297 |
 
 ### Analysis
-Performance remains at chance level even with subject-specific training.
-This rules out inter-subject variability as the sole cause. The persisting
-~50% accuracy confirms that the **offline→online domain shift** (T→E) is
-the primary obstacle: the ERD/ERS patterns learned from sessions 1–3 do
-not generalise to the feedback-modulated sessions 4–5.
+Subject-specific CNNs now well above chance (70–73% mean), confirming that
+the EEG signal contains discriminative MI patterns. High variance across
+subjects (±14–15%) reflects genuine inter-subject variability: some subjects
+(e.g. S04) are "BCI-literate" with very clear ERD/ERS patterns, while
+others (e.g. S03) show weaker or inconsistent responses.
 
 ---
 
@@ -147,8 +187,8 @@ to outperform deep learning methods when training data is limited.
 
 | Classifier | Accuracy | Kappa |
 |---|---|---|
-| CSP+LDA | 49.9% ± 0.9% | −0.002 ± 0.019 |
-| CSP+SVM | 49.7% ± 1.1% | −0.006 ± 0.023 |
+| CSP+LDA | 71.0% ± 12.6% | 69.8% ± 13.3% | 0.419 ± 0.252 |
+| CSP+SVM | 72.5% ± 12.0% | 71.4% ± 13.1% | 0.450 ± 0.241 |
 
 ### Analysis
 The classical CSP baseline — which is specifically designed for this type
@@ -187,8 +227,8 @@ covariance (unsupervised — no test labels used).
 
 | Classifier | Accuracy | Kappa |
 |---|---|---|
-| EA+CSP+LDA | 49.9% ± 0.9% | −0.002 ± 0.019 |
-| EA+CSP+SVM | 49.7% ± 1.1% | −0.006 ± 0.023 |
+| EA+CSP+LDA | 71.0% ± 12.6% | 69.8% ± 13.3% | 0.419 ± 0.252 |
+| EA+CSP+SVM | 72.5% ± 12.0% | 71.4% ± 13.1% | 0.450 ± 0.241 |
 
 ### Analysis
 EA aligns the covariance structure of each session to the identity, which should
@@ -227,8 +267,8 @@ concatenated (7 × 2 = 14 features) before classification.
 
 | Classifier | Accuracy | Kappa |
 |---|---|---|
-| FBCSP+LDA | 50.2% ± 1.2% | +0.005 ± 0.025 |
-| FBCSP+SVM | 50.3% ± 0.4% | +0.006 ± 0.009 |
+| FBCSP+LDA | 75.9% ± 13.4% | 75.5% ± 13.7% | 0.519 ± 0.269 |
+| FBCSP+SVM | 73.6% ± 13.5% | 72.7% ± 14.5% | 0.472 ± 0.271 |
 
 ### Analysis
 FBCSP marginally improves over broad-band CSP (49.9% → 50.2%) but the
@@ -264,8 +304,8 @@ with 3-channel data.
 
 | Classifier | Accuracy | Kappa |
 |---|---|---|
-| Riem-MDM | 50.0% ± 1.6% | −0.000 ± 0.032 |
-| Riem-TS+LDA | 49.9% ± 1.4% | −0.002 ± 0.028 |
+| Riem-MDM | 70.8% ± 13.8% | 69.2% ± 15.4% | 0.416 ± 0.276 |
+| Riem-TS+LDA | 72.9% ± 13.4% | 72.0% ± 13.9% | 0.459 ± 0.268 |
 
 ### Analysis
 Despite the theoretical robustness of Riemannian methods to inter-session
@@ -281,41 +321,54 @@ data without any online adaptation.
 
 ---
 
-## Cross-Experiment Comparison
+## Cross-Experiment Comparison — Corrected Results
 
-| Method | Experiment | Accuracy (mean) | Kappa (mean) |
-|---|---|---|---|
-| EEGNet (pooled, all) | 1 | 48.3% | −0.033 |
-| ShallowConvNet (pooled, all) | 1 | 49.6% | −0.008 |
-| SpectNet (pooled, all) | 1 | 48.9% | −0.023 |
-| EEGNet (subject-specific) | 2 | 49.8% | −0.005 |
-| ShallowConvNet (subject-specific) | 2 | 50.2% | +0.003 |
-| SpectNet (subject-specific) | 2 | 49.9% | −0.002 |
-| CSP+LDA | 3 | 49.9% | −0.002 |
-| CSP+SVM | 3 | 49.7% | −0.006 |
-| EA + CSP+LDA | 4 | 49.9% | −0.002 |
-| EA + CSP+SVM | 4 | 49.7% | −0.006 |
-| FBCSP+LDA | 5a | 50.2% | +0.005 |
-| FBCSP+SVM | 5a | 50.3% | +0.006 |
-| Riem-MDM | 5b | 50.0% | −0.000 |
-| Riem-TS+LDA | 5b | 49.9% | −0.002 |
+All results below use **true evaluation labels** from MOABB (fixed pipeline).
+Metric: mean ± std accuracy across 9 subjects, subject-specific protocol,
+sessions 1–3 train / sessions 4–5 test.
+
+| Method | Exp | Accuracy | F1-score | Kappa |
+|---|---|---|---|---|
+| EEGNet (pooled, all 9) | 1 | 72.4% | — | — |
+| ShallowConvNet (pooled, all 9) | 1 | 70.6% | — | — |
+| SpectNet (pooled, all 9) | 1 | 73.5% | — | — |
+| EEGNet (subject-specific) | 2 | 72.6% ± 15.6% | 68.5% ± 21.9% | 0.451 |
+| ShallowConvNet (subject-specific) | 2 | 70.2% ± 14.3% | 70.1% ± 14.3% | 0.404 |
+| SpectNet (subject-specific) | 2 | 73.3% ± 14.8% | 70.8% ± 18.9% | 0.465 |
+| CSP+LDA | 3 | 71.0% ± 12.6% | 69.8% ± 13.3% | 0.419 |
+| CSP+SVM | 3 | 72.5% ± 12.0% | 71.4% ± 13.1% | 0.450 |
+| EA+CSP+LDA | 4 | 71.0% ± 12.6% | 69.8% ± 13.3% | 0.419 |
+| EA+CSP+SVM | 4 | 72.5% ± 12.0% | 71.4% ± 13.1% | 0.450 |
+| **FBCSP+LDA** | **5a** | **75.9% ± 13.4%** | **75.5% ± 13.7%** | **0.519** |
+| FBCSP+SVM | 5a | 73.6% ± 13.5% | 72.7% ± 14.5% | 0.472 |
+| Riem-MDM | 5b | 70.8% ± 13.8% | 69.2% ± 15.4% | 0.416 |
+| Riem-TS+LDA | 5b | 72.9% ± 13.4% | 72.0% ± 13.9% | 0.459 |
+
+**Best method: FBCSP+LDA at 75.9% mean accuracy (Kappa 0.519).**
 
 ---
 
 ## Key Findings
 
-1. **ERSP normalisation matters:** Per-trial min-max normalisation (Exp 1, initial)
-   destroys the discriminative signal. Fixed to ±6 dB clip in commit `3a242de`.
+1. **Evaluation labels were broken (critical bug):** The GDF evaluation files contain
+   no true class labels. The original code mapped generic event types (781, 783) as
+   left/right, forcing all classifiers to ~50%. Fixed by retrieving true labels from
+   MOABB (`src/eval_labels.py`) and applying them during preprocessing.
 
-2. **Subject-pooling fails:** Mixing subjects into one model does not improve
-   performance and obscures individual variability.
+2. **ERSP per-trial normalisation matters:** Per-trial min-max normalisation destroys
+   inter-trial comparability. Fixed to ±6 dB clip (commit `3a242de`).
 
-3. **Subject-specific CNN ≈ CSP classical baseline:** Under the offline→online
-   protocol, neither deep nor classical approaches yield above-chance accuracy.
+3. **Subject-pooling is competitive with subject-specific:** Once labels are correct,
+   pooled CNN models (using all 9 subjects) reach 70–73%, comparable to subject-specific
+   training, suggesting the ERSP representation captures cross-subject patterns.
 
-4. **The bottleneck is domain shift, not the classifier:** All five methods
-   (3 CNNs + CSP+LDA + CSP+SVM) converge to ~50% on sessions 4–5. This
-   motivates domain adaptation methods (EA, Exp 4) as the next step.
+4. **FBCSP is the top performer (75.9%):** The multi-band decomposition captures
+   band-specific ERD/ERS differences that the single 8–30 Hz band misses.
+
+5. **High inter-subject variability (±13–16%):** Some subjects show near-perfect
+   classification (S04 > 90%) while others are near chance (S03 ~55%). This is
+   consistent with the BCI-IV-2b literature and reflects genuine differences in
+   the clarity of individual EEG motor imagery responses.
 
 ---
 

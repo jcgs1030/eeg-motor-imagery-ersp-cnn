@@ -191,63 +191,66 @@ All input: `(batch, 3, 22, 128)` — 3 channels × 22 freq. bins × 128 time ste
 
 Full experimental narrative and per-experiment analysis in [`EXPERIMENTS.md`](EXPERIMENTS.md).
 
-**Protocol:** Sessions 1–3 (offline, no feedback) → train | Sessions 4–5 (online, with feedback) → test.  
-**Metric:** Mean ± std across 9 subjects, subject-specific models (one model per subject).  
+**Protocol:** Sessions 1–3 train / Sessions 4–5 test (official BCI-IV-2b split).  
+**Metric:** Mean ± std across 9 subjects, subject-specific models.  
 **Chance level:** 50% (balanced binary classification).
 
-### Experiment 1 — CNN Subject-Pooled (all 9 subjects concatenated)
+> **Critical fix:** Earlier results (~50%) were caused by broken evaluation labels in
+> the GDF files. True labels retrieved from MOABB. See [`EXPERIMENTS.md`](EXPERIMENTS.md).
 
-| Model | Accuracy | F1-score | Kappa |
-|---|---|---|---|
-| EEGNet | 48.3% | 47.9% | −0.033 |
-| ShallowConvNet | 49.6% | 49.2% | −0.008 |
-| SpectNet | 48.9% | 48.9% | −0.023 |
+### Experiment 1 — CNN Subject-Pooled
+
+| Model | Test Accuracy |
+|---|---|
+| EEGNet | 73.5% |
+| ShallowConvNet | 70.6% |
+| SpectNet | 72.4% |
 
 ### Experiment 2 — CNN Subject-Specific
 
 | Model | Accuracy | F1-score | Kappa |
 |---|---|---|---|
-| EEGNet | 49.8% ± 0.9% | 45.4% ± 6.9% | −0.005 ± 0.017 |
-| ShallowConvNet | 50.2% ± 1.6% | 50.0% ± 1.7% | +0.003 ± 0.033 |
-| SpectNet | 49.9% ± 1.8% | 47.1% ± 5.9% | −0.002 ± 0.036 |
+| EEGNet | 72.6% ± 15.6% | 68.5% ± 21.9% | 0.451 |
+| ShallowConvNet | 70.2% ± 14.3% | 70.1% ± 14.3% | 0.404 |
+| SpectNet | 73.3% ± 14.8% | 70.8% ± 18.9% | 0.465 |
 
-### Experiment 3 — Classical Baseline: CSP
-
-| Classifier | Accuracy | F1-score | Kappa |
-|---|---|---|---|
-| CSP + LDA | 49.9% ± 0.9% | 48.2% ± 2.4% | −0.002 ± 0.019 |
-| CSP + SVM | 49.7% ± 1.1% | 48.1% ± 2.0% | −0.006 ± 0.023 |
-
-### Experiment 4 — Domain Adaptation: Euclidean Alignment + CSP
+### Experiment 3 — CSP Baselines
 
 | Classifier | Accuracy | F1-score | Kappa |
 |---|---|---|---|
-| EA + CSP + LDA | 49.9% ± 0.9% | 48.2% ± 2.4% | −0.002 ± 0.019 |
-| EA + CSP + SVM | 49.7% ± 1.1% | 48.1% ± 2.0% | −0.006 ± 0.023 |
+| CSP + LDA | 71.0% ± 12.6% | 69.8% ± 13.3% | 0.419 |
+| CSP + SVM | 72.5% ± 12.0% | 71.4% ± 13.1% | 0.450 |
 
-### Experiment 5a — Filter Bank CSP (FBCSP)
-
-| Classifier | Accuracy | F1-score | Kappa |
-|---|---|---|---|
-| FBCSP + LDA | 50.2% ± 1.2% | 49.5% ± 1.6% | +0.005 ± 0.025 |
-| FBCSP + SVM | 50.3% ± 0.4% | 48.9% ± 2.6% | +0.006 ± 0.009 |
-
-### Experiment 5b — Riemannian Geometry (MDM / TS+LDA)
+### Experiment 4 — Euclidean Alignment + CSP
 
 | Classifier | Accuracy | F1-score | Kappa |
 |---|---|---|---|
-| Riem-MDM | 50.0% ± 1.6% | 47.9% ± 3.7% | −0.000 ± 0.032 |
-| Riem-TS+LDA | 49.9% ± 1.4% | 48.4% ± 2.1% | −0.002 ± 0.028 |
+| EA + CSP + LDA | 71.0% ± 12.6% | 69.8% ± 13.3% | 0.419 |
+| EA + CSP + SVM | 72.5% ± 12.0% | 71.4% ± 13.1% | 0.450 |
+
+### Experiment 5a — Filter Bank CSP (best result)
+
+| Classifier | Accuracy | F1-score | Kappa |
+|---|---|---|---|
+| **FBCSP + LDA** | **75.9% ± 13.4%** | **75.5% ± 13.7%** | **0.519** |
+| FBCSP + SVM | 73.6% ± 13.5% | 72.7% ± 14.5% | 0.472 |
+
+### Experiment 5b — Riemannian Geometry
+
+| Classifier | Accuracy | F1-score | Kappa |
+|---|---|---|---|
+| Riem-MDM | 70.8% ± 13.8% | 69.2% ± 15.4% | 0.416 |
+| Riem-TS+LDA | 72.9% ± 13.4% | 72.0% ± 13.9% | 0.459 |
 
 ### Key Finding
 
-All 11 methods across 5 experiments converge to chance level (~50%) on sessions 4–5.
-The bottleneck is the **structural domain shift** between the offline training paradigm
-(sessions 1–3, no feedback) and the online evaluation paradigm (sessions 4–5, with
-visual feedback), not the choice of model or feature extraction method.
+**Best method: FBCSP+LDA at 75.9%** — consistent with the BCI-IV-2b literature for
+3-channel classifiers. High inter-subject variance (±13–16%) reflects genuine
+differences in individual EEG motor imagery responses (S04 > 92%, S03 ~55%).
 
 See [`results/riemannian/figures/comparison_all_methods.png`](results/riemannian/figures/comparison_all_methods.png)
-for the full visual comparison across all experiments.
+for the full visual comparison, and [`EXPERIMENTS.md`](EXPERIMENTS.md) for the detailed
+narrative including the label-bug discovery and fix.
 
 ---
 
