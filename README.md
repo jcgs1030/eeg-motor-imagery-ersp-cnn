@@ -36,30 +36,42 @@ This repository contains the full implementation developed as part of the Master
 ```
 eeg-motor-imagery-ersp-cnn/
 ├── README.md
+├── EXPERIMENTS.md             ← full experimental log with results and analysis
 ├── pyproject.toml
 ├── uv.lock
 ├── .python-version
-├── .gitignore
 ├── data/
-│   ├── raw/               ← place your GDF files here (B0101T.gdf ... B0905E.gdf)
-│   └── processed/         ← auto-generated epochs (.fif) and spectrograms (.npz)
+│   ├── raw/                   ← place your GDF files here (B0101T.gdf ... B0905E.gdf)
+│   └── processed/             ← auto-generated epochs (.fif) and spectrograms (.npz)
 ├── notebooks/
-│   └── 01_dataset_exploration.ipynb
+│   ├── 01_dataset_exploration.ipynb
+│   └── 02_gdf_visual_exploration.ipynb
 ├── src/
-│   ├── config.py          ← all pipeline parameters (single source of truth)
-│   ├── preprocessing.py   ← GDF loading, bandpass filter, ICA, epoching
-│   ├── ersp.py            ← STFT-based ERSP spectrogram generation
-│   ├── dataset.py         ← PyTorch Dataset / DataLoader
-│   ├── train.py           ← training loop with early stopping
-│   ├── evaluate.py        ← metrics, confusion matrix, model comparison
+│   ├── config.py              ← all pipeline parameters (single source of truth)
+│   ├── preprocessing.py       ← GDF loading, bandpass filter, epoching
+│   ├── ersp.py                ← STFT-based ERSP spectrogram generation
+│   ├── dataset.py             ← PyTorch Dataset / DataLoader
+│   ├── train.py               ← CNN training — subject-pooled
+│   ├── train_subject_specific.py  ← CNN training — one model per subject
+│   ├── train_csp_lda.py       ← classical baseline: CSP + LDA / SVM
+│   ├── train_ea_csp_lda.py    ← domain adaptation: EA + CSP + LDA / SVM
+│   ├── evaluate.py            ← metrics, confusion matrix, model comparison
 │   └── models/
-│       ├── __init__.py
-│       ├── eegnet.py      ← EEGNet (Lawhern et al., 2018)
-│       ├── shallowconvnet.py   ← ShallowConvNet (Schirrmeister et al., 2017)
-│       └── spectnet.py    ← SpectNet (Ruffini et al., 2018)
+│       ├── eegnet.py          ← EEGNet (Lawhern et al., 2018)
+│       ├── shallowconvnet.py  ← ShallowConvNet (Schirrmeister et al., 2017)
+│       └── spectnet.py        ← SpectNet (Ruffini et al., 2018)
 └── results/
-    ├── figures/
-    └── metrics/
+    ├── figures/               ← Exp 1: pooled CNN
+    ├── metrics/
+    ├── subject_specific/      ← Exp 2: subject-specific CNN
+    │   ├── figures/
+    │   └── metrics/
+    ├── csp_lda/               ← Exp 3: CSP + LDA / SVM
+    │   ├── figures/
+    │   └── metrics/
+    └── ea_csp_lda/            ← Exp 4: EA + CSP + LDA / SVM
+        ├── figures/
+        └── metrics/
 ```
 
 ---
@@ -177,25 +189,105 @@ All input: `(batch, 3, 22, 128)` — 3 channels × 22 freq. bins × 128 time ste
 
 ## Results
 
-> To be completed after the experimental phase.
+Full experimental narrative and per-experiment analysis in [`EXPERIMENTS.md`](EXPERIMENTS.md).
 
-| Method | Mean Acc. (%) | Kappa | F1-score |
-|--------|-------------|-------|----------|
-| LDA | — | — | — |
-| SVM + CSP | — | — | — |
-| EEGNet | — | — | — |
-| ShallowConvNet | — | — | — |
-| SpectNet | — | — | — |
+**Protocol:** Sessions 1–3 train / Sessions 4–5 test (official BCI-IV-2b split).  
+**Metric:** Mean ± std across 9 subjects, subject-specific models.  
+**Chance level:** 50% (balanced binary classification).
+
+> **Critical fix:** Earlier results (~50%) were caused by broken evaluation labels in
+> the GDF files. True labels retrieved from MOABB. See [`EXPERIMENTS.md`](EXPERIMENTS.md).
+
+### Experiment 1 — CNN Subject-Pooled
+
+| Model | Test Accuracy |
+|---|---|
+| EEGNet | 73.5% |
+| ShallowConvNet | 70.6% |
+| SpectNet | 72.4% |
+
+### Experiment 2 — CNN Subject-Specific
+
+| Model | Accuracy | F1-score | Kappa |
+|---|---|---|---|
+| EEGNet | 72.6% ± 15.6% | 68.5% ± 21.9% | 0.451 |
+| ShallowConvNet | 70.2% ± 14.3% | 70.1% ± 14.3% | 0.404 |
+| SpectNet | 73.3% ± 14.8% | 70.8% ± 18.9% | 0.465 |
+
+### Experiment 3 — CSP Baselines
+
+| Classifier | Accuracy | F1-score | Kappa |
+|---|---|---|---|
+| CSP + LDA | 71.0% ± 12.6% | 69.8% ± 13.3% | 0.419 |
+| CSP + SVM | 72.5% ± 12.0% | 71.4% ± 13.1% | 0.450 |
+
+### Experiment 4 — Euclidean Alignment + CSP
+
+| Classifier | Accuracy | F1-score | Kappa |
+|---|---|---|---|
+| EA + CSP + LDA | 71.0% ± 12.6% | 69.8% ± 13.3% | 0.419 |
+| EA + CSP + SVM | 72.5% ± 12.0% | 71.4% ± 13.1% | 0.450 |
+
+### Experiment 5a — Filter Bank CSP (best result)
+
+| Classifier | Accuracy | F1-score | Kappa |
+|---|---|---|---|
+| **FBCSP + LDA** | **75.9% ± 13.4%** | **75.5% ± 13.7%** | **0.519** |
+| FBCSP + SVM | 73.6% ± 13.5% | 72.7% ± 14.5% | 0.472 |
+
+### Experiment 5b — Riemannian Geometry
+
+| Classifier | Accuracy | F1-score | Kappa |
+|---|---|---|---|
+| Riem-MDM | 70.8% ± 13.8% | 69.2% ± 15.4% | 0.416 |
+| Riem-TS+LDA | 72.9% ± 13.4% | 72.0% ± 13.9% | 0.459 |
+
+### Key Finding
+
+**Best method: FBCSP+LDA at 75.9%** — consistent with the BCI-IV-2b literature for
+3-channel classifiers. High inter-subject variance (±13–16%) reflects genuine
+differences in individual EEG motor imagery responses (S04 > 92%, S03 ~55%).
+
+See [`results/riemannian/figures/comparison_all_methods.png`](results/riemannian/figures/comparison_all_methods.png)
+for the full visual comparison, and [`EXPERIMENTS.md`](EXPERIMENTS.md) for the detailed
+narrative including the label-bug discovery and fix.
+
+---
+
+## Known Methodological Finding — ERSP Baseline Window (pending reprocessing)
+
+The baseline window used to normalise every ERSP tensor (`BASELINE = (-0.5, 0.0)`,
+`src/config.py`) is shorter than the 1.024 s STFT window used to estimate it, so the
+baseline reference leaks post-cue signal. This flattens the ERD/ERS contrast visible
+in grand-average plots and biases the tensors that feed every model in Experiments
+1–5b below.
+
+Confirmed with the full 3 s pre-cue fixation period as baseline instead: the expected
+contralateral ERD reappears (S04 alone: -2.87 dB; 9 subjects pooled: -0.98 dB, same
+direction). See [`results/baseline_bug_before_fix/`](results/baseline_bug_before_fix/)
+for the before/diagnostic/confirmation images, and
+[`EXPERIMENTS.md`](EXPERIMENTS.md#diagnostic-finding--baseline-window-contamination-identified-reprocessing-pending)
+for the full write-up.
+
+**Status:** identified and confirmed, **not yet applied**. All results below were
+trained on ERSP tensors with the original (contaminated) baseline window.
+Reprocessing — regenerating the ERSP tensors with an extended baseline and
+re-running Experiments 1–5b — is planned as a separate follow-up.
 
 ---
 
 ## References
 
 - Leeb, R. et al. (2008). *BCI Competition 2008 – Graz Data Set B*. Graz University of Technology.
-- Lawhern, V.J. et al. (2018). *EEGNet*. J. Neural Eng., 15(5), 056013.
-- Schirrmeister, R.T. et al. (2017). *Deep learning with CNNs for EEG decoding*. Hum. Brain Mapp., 38(11).
-- Ruffini, G. et al. (2018). *Deep learning using EEG spectrograms for RBD prognosis*. arXiv.
-- Gramfort, A. et al. (2014). *MNE software for MEG and EEG data*. NeuroImage, 86.
+- Lawhern, V.J. et al. (2018). *EEGNet: A compact convolutional neural network for EEG-based BCI*. J. Neural Eng., 15(5), 056013.
+- Schirrmeister, R.T. et al. (2017). *Deep learning with convolutional neural networks for EEG decoding*. Hum. Brain Mapp., 38(11).
+- Ruffini, G. et al. (2018). *Deep learning using EEG spectrograms for prognosis of neurodegeneration*. arXiv.
+- Ang, K.K. et al. (2008). *Filter Bank Common Spatial Pattern (FBCSP) algorithm*. Proc. IEEE IJCNN.
+- Barachant, A. et al. (2012). *Multiclass BCI classification by Riemannian geometry*. IEEE TBME, 59(4).
+- Barachant, A. et al. (2013). *Classification of covariance matrices using a Riemannian-based kernel*. Neurocomputing, 112.
+- He, H. & Wu, D. (2019). *Transfer learning for EEG-based BCI: A review*. IEEE TNSRE, 27(1).
+- He, H. et al. (2020). *Transfer learning for BCI: A Euclidean space data alignment approach*. IEEE TNSRE, 68(6).
+- Gramfort, A. et al. (2014). *MNE software for processing MEG and EEG data*. NeuroImage, 86.
 
 ---
 

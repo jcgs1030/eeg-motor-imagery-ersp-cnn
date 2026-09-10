@@ -1,0 +1,3 @@
+Classifier,Accuracy,F1-score,Kappa
+Riem-MDM,70.8% ± 13.8%,69.2% ± 15.4%,0.416 ± 0.276
+Riem-TS+LDA,72.9% ± 13.4%,72.0% ± 13.9%,0.459 ± 0.268

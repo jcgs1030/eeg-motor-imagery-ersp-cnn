@@ -28,12 +28,13 @@ from config import (
     DATA_RAW, DATA_PROC, FIGURES_DIR,
     SUBJECTS, TRAIN_SUFFIX, EVAL_SUFFIX, TRAIN_SESSIONS, TEST_SESSIONS,
     CHANNELS, SFREQ,
-    EVENT_LEFT, EVENT_RIGHT, EVENT_LEFT_ONLINE, EVENT_RIGHT_ONLINE,
+    EVENT_LEFT, EVENT_RIGHT, EVENT_CUE_EVAL,
     EVENT_LABELS, CLASS_NAMES,
     FILT_LOW, FILT_HIGH, FILT_METHOD,
     EPOCH_TMIN, EPOCH_TMAX, BASELINE, REJECT_THRESH,
     ICA_N_COMPS, ICA_METHOD, ICA_SEED
 )
+from eval_labels import get_eval_labels
 
 SESSION_MAP = {TRAIN_SUFFIX: TRAIN_SESSIONS, EVAL_SUFFIX: TEST_SESSIONS}
 
@@ -181,56 +182,94 @@ def apply_ica(raw: mne.io.Raw) -> mne.io.Raw:
 
 def extract_epochs(raw: mne.io.Raw) -> mne.Epochs:
     """
-    Segment the signal into epochs aligned to motor imagery events
-    from BCI-IV-2b.
-
-    Events:
-        769 → left hand  (class 0)
-        770 → right hand (class 1)
+    Segment the signal into epochs for TRAINING sessions (1-3).
+    Aligns to the true cue events 769 (left) and 770 (right).
     """
-    # Extract events from the stimulus channel
     events, event_id = mne.events_from_annotations(raw, verbose=False)
 
-    # Filter only target events — training (769/770) or evaluation (781/783)
-    left_keys  = [str(EVENT_LEFT),  str(EVENT_LEFT_ONLINE),  "769", "781"]
-    right_keys = [str(EVENT_RIGHT), str(EVENT_RIGHT_ONLINE), "770", "783"]
-
     target_ids = {}
-    for k in left_keys:
+    for k in [str(EVENT_LEFT), "769"]:
         if k in event_id:
             target_ids["left"] = event_id[k]
             break
-    for k in right_keys:
+    for k in [str(EVENT_RIGHT), "770"]:
         if k in event_id:
             target_ids["right"] = event_id[k]
             break
 
     if not target_ids:
-        # Last-resort: scan by keyword
-        for k, v in event_id.items():
-            if "left" in str(k).lower():
-                target_ids["left"] = v
-            elif "right" in str(k).lower():
-                target_ids["right"] = v
-
-    if not target_ids:
         print(f"  Available events: {event_id}")
+        raise ValueError("Training cue events 769/770 not found in GDF.")
+
+    # baseline=None: ERSP handles its own spectral baseline normalisation.
+    epochs = mne.Epochs(
+        raw, events, event_id=target_ids,
+        tmin=EPOCH_TMIN, tmax=EPOCH_TMAX,
+        baseline=None, reject={"eeg": REJECT_THRESH},
+        preload=True, verbose=False
+    )
+    return epochs
+
+
+def extract_epochs_eval(raw: mne.io.Raw, true_labels: np.ndarray) -> mne.Epochs:
+    """
+    Segment the signal into epochs for EVALUATION sessions (4-5).
+
+    The GDF does not contain true class labels — only the generic cue event
+    783 (cue onset, class unknown). True labels are provided externally via
+    `true_labels` (array of 0=Left, 1=Right), retrieved from MOABB in the
+    same chronological order as the 783 events.
+
+    After artifact rejection, `epochs.selection` holds the indices of the
+    surviving trials within the original event array. This is used to pick
+    the correct subset of true_labels so that signal and label stay aligned.
+
+    Parameters
+    ----------
+    raw         : filtered MNE Raw object
+    true_labels : (N_cues,) array of int — 0=Left, 1=Right, in trial order
+
+    Returns
+    -------
+    mne.Epochs with event_id = {'left': 1, 'right': 2}
+    """
+    events, event_id = mne.events_from_annotations(raw, verbose=False)
+
+    # Locate the 783 cue event
+    cue_key = str(EVENT_CUE_EVAL)  # "783"
+    if cue_key not in event_id:
         raise ValueError(
-            "Motor imagery events (769/770) not found. "
-            "Check the event IDs in the GDF file."
+            f"Evaluation cue event {EVENT_CUE_EVAL} not found. "
+            f"Available: {event_id}"
         )
 
+    cue_id    = event_id[cue_key]
+    cue_events = events[events[:, 2] == cue_id]   # only 783 rows
+    n_cues    = len(cue_events)
+
+    if n_cues != len(true_labels):
+        raise AssertionError(
+            f"Cue count mismatch: GDF has {n_cues} '783' events "
+            f"but label array has {len(true_labels)} entries. "
+            f"Check session/subject alignment."
+        )
+
+    # Build epochs aligned to 783 with a single dummy event_id
     epochs = mne.Epochs(
-        raw,
-        events,
-        event_id=target_ids,
-        tmin=EPOCH_TMIN,
-        tmax=EPOCH_TMAX,
-        baseline=BASELINE,
-        reject={"eeg": REJECT_THRESH},
-        preload=True,
-        verbose=False
+        raw, cue_events, event_id={cue_key: cue_id},
+        tmin=EPOCH_TMIN, tmax=EPOCH_TMAX,
+        baseline=None, reject={"eeg": REJECT_THRESH},
+        preload=True, verbose=False
     )
+
+    # Map surviving trials to their true labels via epochs.selection
+    surviving_labels = true_labels[epochs.selection]
+
+    # Overwrite event codes with canonical class codes (1=left, 2=right)
+    # Class 0 (Left) → code 1, Class 1 (Right) → code 2
+    canonical = np.where(surviving_labels == 0, 1, 2)
+    epochs.events[:, 2] = canonical
+    epochs.event_id = {"left": 1, "right": 2}
 
     return epochs
 
@@ -270,6 +309,9 @@ def process_subject(subject: int, suffix: str,
     sessions = SESSION_MAP[suffix]
     print(f"\n  Processing {tag} (sessions {sessions})...")
 
+    # True eval labels (needed only for suffix='E')
+    eval_labels = get_eval_labels(subject) if suffix == EVAL_SUFFIX else None
+
     all_epochs = []
     for session in sessions:
         path = get_gdf_path(subject, session)
@@ -291,8 +333,15 @@ def process_subject(subject: int, suffix: str,
 
         # 4. Epoching
         try:
-            epochs = extract_epochs(raw)
-            epochs = normalize_event_ids(epochs)
+            if suffix == EVAL_SUFFIX:
+                # Evaluation sessions: align to cue 783, apply MOABB labels
+                session_labels = eval_labels[session]
+                epochs = extract_epochs_eval(raw, session_labels)
+            else:
+                # Training sessions: align to 769/770 (true class labels in GDF)
+                epochs = extract_epochs(raw)
+                epochs = normalize_event_ids(epochs)
+
             all_epochs.append(epochs)
             n_left  = len(epochs["left"])  if "left"  in epochs.event_id else 0
             n_right = len(epochs["right"]) if "right" in epochs.event_id else 0
@@ -458,7 +507,14 @@ def plot_all_subjects_summary(suffix: str = TRAIN_SUFFIX):
         try:
             raw = load_raw(subj, session)
             apply_filter(raw)
-            epochs = extract_epochs(raw)
+            if suffix == EVAL_SUFFIX:
+                # Evaluation sessions only carry the generic cue 783 — the
+                # true left/right label comes from MOABB (see eval_labels.py),
+                # same as process_subject() does for the E split.
+                session_labels = get_eval_labels(subj)[session]
+                epochs = extract_epochs_eval(raw, session_labels)
+            else:
+                epochs = extract_epochs(raw)
             nl = len(epochs["left"])  if "left"  in epochs.event_id else 0
             nr = len(epochs["right"]) if "right" in epochs.event_id else 0
             n_left_list.append(nl)

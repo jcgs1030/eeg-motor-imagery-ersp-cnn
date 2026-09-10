@@ -1,0 +1,3 @@
+Classifier,Accuracy,F1-score,Kappa
+FBCSP+LDA,75.9% ± 13.4%,75.5% ± 13.7%,0.519 ± 0.269
+FBCSP+SVM,73.6% ± 13.5%,72.7% ± 14.5%,0.472 ± 0.271
