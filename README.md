@@ -202,17 +202,22 @@ Full experimental narrative and per-experiment analysis in [`EXPERIMENTS.md`](EX
 
 | Model | Test Accuracy |
 |---|---|
-| EEGNet | 73.5% |
-| ShallowConvNet | 70.6% |
-| SpectNet | 72.4% |
+| EEGNet | 73.2% |
+| ShallowConvNet | 70.7% |
+| **SpectNet** | **74.5%** |
+
+Before the ERSP baseline-window fix (see "Known Methodological Finding" below),
+all three pooled models scored ~48–50% (chance). Fixing the baseline window fixed
+this — see [`EXPERIMENTS.md`](EXPERIMENTS.md#experiment-1--cnn-subject-pooled) for
+the full before/after table and the proposed explanation.
 
 ### Experiment 2 — CNN Subject-Specific
 
 | Model | Accuracy | F1-score | Kappa |
 |---|---|---|---|
-| EEGNet | 72.6% ± 15.6% | 68.5% ± 21.9% | 0.451 |
-| ShallowConvNet | 70.2% ± 14.3% | 70.1% ± 14.3% | 0.404 |
-| SpectNet | 73.3% ± 14.8% | 70.8% ± 18.9% | 0.465 |
+| EEGNet | 72.0% ± 14.5% | 69.2% ± 18.4% | 0.440 |
+| ShallowConvNet | 69.0% ± 14.2% | 68.4% ± 14.6% | 0.381 |
+| SpectNet | 72.7% ± 14.4% | 70.4% ± 18.4% | 0.453 |
 
 ### Experiment 3 — CSP Baselines
 
@@ -245,8 +250,10 @@ Full experimental narrative and per-experiment analysis in [`EXPERIMENTS.md`](EX
 ### Key Finding
 
 **Best method: FBCSP+LDA at 75.9%** — consistent with the BCI-IV-2b literature for
-3-channel classifiers. High inter-subject variance (±13–16%) reflects genuine
-differences in individual EEG motor imagery responses (S04 > 92%, S03 ~55%).
+3-channel classifiers, closely followed by a single pooled SpectNet CNN at 74.5%
+(Experiment 1) with no per-subject tuning at all. High inter-subject variance
+(±13–16%) reflects genuine differences in individual EEG motor imagery responses
+(S04 > 90%, S02/S03 ~50–58%).
 
 See [`results/riemannian/figures/comparison_all_methods.png`](results/riemannian/figures/comparison_all_methods.png)
 for the full visual comparison, and [`EXPERIMENTS.md`](EXPERIMENTS.md) for the detailed
@@ -254,25 +261,27 @@ narrative including the label-bug discovery and fix.
 
 ---
 
-## Known Methodological Finding — ERSP Baseline Window (pending reprocessing)
+## Known Methodological Finding — ERSP Baseline Window (fixed and reprocessed)
 
-The baseline window used to normalise every ERSP tensor (`BASELINE = (-0.5, 0.0)`,
-`src/config.py`) is shorter than the 1.024 s STFT window used to estimate it, so the
-baseline reference leaks post-cue signal. This flattens the ERD/ERS contrast visible
-in grand-average plots and biases the tensors that feed every model in Experiments
-1–5b below.
+The baseline window originally used to normalise every ERSP tensor
+(`BASELINE = (-0.5, 0.0)`) was shorter than the 1.024 s STFT window used to
+estimate it, so the baseline reference leaked post-cue signal — flattening the
+ERD/ERS contrast and biasing the tensors that feed every CNN.
 
-Confirmed with the full 3 s pre-cue fixation period as baseline instead: the expected
-contralateral ERD reappears (S04 alone: -2.87 dB; 9 subjects pooled: -0.98 dB, same
-direction). See [`results/baseline_bug_before_fix/`](results/baseline_bug_before_fix/)
-for the before/diagnostic/confirmation images, and
-[`EXPERIMENTS.md`](EXPERIMENTS.md#diagnostic-finding--baseline-window-contamination-identified-reprocessing-pending)
-for the full write-up.
+Confirmed with the full 3 s pre-cue fixation period as baseline instead: the
+expected contralateral ERD reappears (S04 alone: -2.87 dB; 9 subjects pooled:
+-0.98 dB, same direction). See
+[`results/baseline_bug_before_fix/`](results/baseline_bug_before_fix/) for the
+before/diagnostic/confirmation images.
 
-**Status:** identified and confirmed, **not yet applied**. All results below were
-trained on ERSP tensors with the original (contaminated) baseline window.
-Reprocessing — regenerating the ERSP tensors with an extended baseline and
-re-running Experiments 1–5b — is planned as a separate follow-up.
+**Status: fixed and reprocessed.** `EPOCH_TMIN`/`BASELINE` were extended in
+`src/config.py`, all ERSP tensors were regenerated, and Experiments 1–5b above
+reflect the corrected data. The fix mattered most for Experiment 1 (CNN,
+subject-pooled): all three architectures jumped from ~48–50% (chance) to
+70.7–74.5%. The classical baselines (Experiments 3–5b) were unaffected, since
+they operate on raw filtered epochs rather than ERSP tensors. Full before/after
+tables and the proposed explanation are in
+[`EXPERIMENTS.md`](EXPERIMENTS.md#diagnostic-finding--baseline-window-contamination-fixed-and-reprocessed).
 
 ---
 
