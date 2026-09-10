@@ -150,6 +150,91 @@ def compute_ersp_image_wavelet(epoch_data: np.ndarray,
     return ersp_norm.astype(np.float32)
 
 
+def plot_ersp_grand_average_wavelet(subjects: list = None, suffix: str = "both",
+                                    save_fig: bool = True):
+    """
+    Grand-average ERSP across ALL subjects, computed with the Morlet wavelet
+    transform instead of STFT — the wavelet counterpart of
+    plot_ersp_grand_average(), for a direct visual comparison of the two
+    transforms at the population level.
+
+    Unlike the STFT grand-average (which reuses the precomputed *-ersp.npz
+    files), this recomputes ERSP per trial from the epoch *-epo.fif files,
+    because only the STFT version is cached in the .npz arrays.
+    """
+    subjects = subjects or SUBJECTS
+    suffixes = ["T", "E"] if suffix == "both" else [suffix]
+
+    sum_by_class = {0: np.zeros((N_CHANNELS, IMG_FREQ_BINS, IMG_TIME_BINS)),
+                    1: np.zeros((N_CHANNELS, IMG_FREQ_BINS, IMG_TIME_BINS))}
+    n_trials_pooled = {0: 0, 1: 0}
+    n_subjects_used = 0
+    bl_end = int(abs(EPOCH_TMIN) * SFREQ)
+
+    for subj in subjects:
+        loaded_any = False
+        for suf in suffixes:
+            epo_path = DATA_PROC / f"S{subj:02d}{suf}-epo.fif"
+            if not epo_path.exists():
+                continue
+            epochs = mne.read_epochs(str(epo_path), verbose=False)
+
+            for cls_name, cls_label in [("left", 0), ("right", 1)]:
+                if cls_name not in epochs.event_id:
+                    continue
+                ep_data = epochs[cls_name].get_data()  # (N, C, T)
+                for trial_idx in range(ep_data.shape[0]):
+                    for ch_idx in range(ep_data.shape[1]):
+                        signal = ep_data[trial_idx, ch_idx, :]
+                        baseline = signal[:bl_end]
+                        img = compute_ersp_image_wavelet(signal, baseline, sfreq=SFREQ)
+                        sum_by_class[cls_label][ch_idx] += img
+                    n_trials_pooled[cls_label] += 1
+            loaded_any = True
+        n_subjects_used += int(loaded_any)
+
+    if n_subjects_used == 0:
+        print("  No epoch .fif files found. Run preprocessing.py first.")
+        return
+
+    fig, axes = plt.subplots(N_CHANNELS, 2, figsize=(10, 4 * N_CHANNELS))
+    fig.suptitle(
+        f"Grand-average ERSP (Morlet Wavelet) — {n_subjects_used} subjects pooled "
+        f"({'sessions 1-5' if suffix == 'both' else ('sessions 1-3' if suffix == 'T' else 'sessions 4-5')})\n"
+        f"(columns: Left n={n_trials_pooled[0]} | Right n={n_trials_pooled[1]} — rows: C3, Cz, C4)",
+        fontsize=11, fontweight="bold"
+    )
+
+    for ch_i, ch_name in enumerate(CHANNELS[:N_CHANNELS]):
+        for cls_i, (cls_label, cls_name) in enumerate([(0, "Left"), (1, "Right")]):
+            ax = axes[ch_i, cls_i]
+            grand_avg = sum_by_class[cls_label][ch_i] / n_trials_pooled[cls_label]
+            im = ax.imshow(
+                grand_avg, aspect="auto", origin="lower",
+                cmap="RdYlBu_r", vmin=0, vmax=1,
+                extent=[EPOCH_TMIN, EPOCH_TMAX, ERSP_FMIN, ERSP_FMAX]
+            )
+            ax.axvline(0, color="white", linewidth=1.0, linestyle="--")
+            ax.axhspan(8, 13, alpha=0.15, color="cyan")    # mu band
+            ax.axhspan(14, 30, alpha=0.10, color="yellow") # beta band
+            ax.set_title(f"{ch_name} — {cls_name} (n={n_trials_pooled[cls_label]})", fontsize=9)
+            ax.set_ylabel("Frequency (Hz)", fontsize=8)
+            ax.set_xlabel("Time (s)", fontsize=8)
+            ax.tick_params(labelsize=7)
+            plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04,
+                         label="Norm. ERSP").ax.tick_params(labelsize=6)
+
+    plt.tight_layout()
+
+    if save_fig:
+        fig_path = FIGURES_DIR / f"ersp_grand_average_wavelet_{suffix}.png"
+        fig.savefig(str(fig_path), dpi=150, bbox_inches="tight")
+        print(f"    Grand-average (wavelet) figure saved to: {fig_path.name}")
+        plt.close(fig)
+    else:
+        plt.show()
+
+
 def plot_stft_vs_wavelet(subject: int, suffix: str = TRAIN_SUFFIX,
                          cls_name: str = "left", trial_idx: int = 0,
                          channel: str = "C3", save_fig: bool = True):
@@ -495,7 +580,7 @@ def plot_ersp_grand_average(subjects: list = None, suffix: str = "both",
     plt.tight_layout()
 
     if save_fig:
-        fig_path = FIGURES_DIR / f"ersp_grand_average_{suffix}.png"
+        fig_path = FIGURES_DIR / f"ersp_grand_average_stft_{suffix}.png"
         fig.savefig(str(fig_path), dpi=150, bbox_inches="tight")
         print(f"    Grand-average figure saved to: {fig_path.name}")
         plt.close(fig)
@@ -521,6 +606,9 @@ def main():
     parser.add_argument("--compare-transform", action="store_true",
                         help="Generate STFT-vs-Wavelet comparison figures "
                              "(requires epoch .fif files to already exist)")
+    parser.add_argument("--grand-average-wavelet", action="store_true",
+                        help="Generate the grand-average ERSP (Morlet wavelet) pooled "
+                             "across all subjects (requires epoch .fif files to exist)")
     args = parser.parse_args()
 
     print("\n══════════════════════════════════════════════")
@@ -547,6 +635,9 @@ def main():
 
     if args.grand_average:
         plot_ersp_grand_average(subjects=subjects, suffix=args.suffix)
+
+    if args.grand_average_wavelet:
+        plot_ersp_grand_average_wavelet(subjects=subjects, suffix=args.suffix)
 
     if args.compare_transform:
         for subj in subjects:
