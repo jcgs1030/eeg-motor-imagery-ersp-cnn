@@ -95,6 +95,87 @@ After the fix, 0.5 = no change, < 0.5 = ERD (desynchronisation), > 0.5 = ERS.
 
 ---
 
+## Diagnostic Finding — Baseline Window Contamination (identified, reprocessing pending)
+
+> **Status: identified and confirmed, NOT yet applied to the production pipeline.**
+> Experiments 1–5b below still use the original `BASELINE = (-0.5, 0.0)` window.
+> A full reprocessing (regenerate all ERSP tensors + retrain all experiments) is
+> planned as a follow-up once this finding is documented.
+
+### Root cause
+
+`STFT_WIN_LEN = 256` samples (1.024 s at 250 Hz) is **longer** than the baseline
+window `BASELINE = (-0.5, 0.0)` (0.5 s). Since `compute_ersp_image()` (`src/ersp.py`)
+estimates the baseline reference power by reusing STFT frames from the trial's own
+STFT, every "baseline" frame already leaks signal from **after** the cue:
+
+```
+frame centered at t=0.000s (local) -> spans absolute [-0.500, +0.012]s
+frame centered at t=0.256s (local) -> spans absolute [-0.756, +0.268]s
+```
+
+The second frame alone mixes in up to 268 ms of post-cue signal into what should be
+a pure pre-stimulus reference. This does not change the shape of the data (still
+`(3, 22, 128)` per trial), but it biases the ERSP normalisation and visually flattens
+the ERD/ERS contrast in any grand-average plot.
+
+### Evidence (`src/verify_timeline.py`, `src/diagnostic_fixed_baseline.py`, `src/diagnostic_extended_baseline.py`)
+
+- `verify_timeline.py` confirmed empirically (45/45 GDF files, std = 0.0000) that the
+  trial start-to-cue interval is exactly **3.000 s**, i.e. sessions 1–3 have 3 full
+  seconds of clean pre-cue fixation available — far more than the 0.5 s currently used.
+- A first diagnostic (`diagnostic_fixed_baseline.py`) recomputed the baseline via an
+  independent Welch periodogram over the *same* 0.5 s window (no STFT frame reuse).
+  Result: **no visible change** — ruling out "frame reuse" alone as sufficient
+  explanation; the 0.5 s window itself is simply too short and too close to the
+  epoch's own STFT zero-padding edge (`padded=True`).
+- A second diagnostic (`diagnostic_extended_baseline.py`) re-extracted epochs with
+  `tmin=-3.0s` (using the full fixation period) and computed the baseline reference
+  from a clean `-1.0..0.0s` window, far from any padding edge. Result, channel C3
+  (contralateral to right-hand imagery), mu band (8–13 Hz):
+
+  | Scope | Class | Baseline (dB) | Imagery (dB) | Δ |
+  |---|---|---|---|---|
+  | Subject S04 alone (n=210/class) | Left (ipsilateral) | -6.28 | -6.31 | **-0.03** (flat, as expected) |
+  | Subject S04 alone (n=210/class) | Right (contralateral) | -6.05 | -8.92 | **-2.87** (clear ERD) |
+  | 9 subjects pooled (n=1840/class) | Left (ipsilateral) | -9.80 | -9.95 | **-0.15** (near flat) |
+  | 9 subjects pooled (n=1840/class) | Right (contralateral) | -9.87 | -10.85 | **-0.98** (ERD, correct direction) |
+
+  This reproduces the textbook contralateral ERD pattern (Pfurtscheller & Lopes da
+  Silva, 1999) at both the single-subject and population level. The pooled effect is
+  much smaller than the single-subject effect, consistent with the inter-subject
+  variability already documented above (S04 ≫ S03 in classification accuracy).
+
+### Conclusion
+
+The original `(-0.5, 0.0)` baseline window is a genuine measurement bug, not just a
+visualisation issue: it biases the same ERSP tensors that feed every CNN in
+Experiments 1–2 and every classical baseline in Experiments 3–5b. The ERD/ERS
+physiological effect is present in the data and recoverable once the baseline window
+is long enough to avoid STFT edge contamination.
+
+### Planned fix (not yet applied)
+
+Extend `BASELINE` (and `EPOCH_TMIN`) to make use of the full 3 s pre-cue fixation
+period, regenerate all `S0x{T,E}-epo.fif` and `S0x{T,E}-ersp.npz` files, and re-run
+Experiments 1–5b. Until that reprocessing happens, all results below should be read
+with this caveat in mind — they were trained on ERSP tensors with the contaminated
+baseline.
+
+### STFT vs. Wavelet transform (`src/ersp.py: compute_ersp_image_wavelet`, `plot_stft_vs_wavelet`)
+
+As a related methodological check, a Morlet continuous-wavelet-transform version of
+the ERSP was implemented for side-by-side comparison (`results/figures/stft_vs_wavelet_*.png`,
+`results/figures/ersp_grand_average_wavelet_{T,E,both}.png`). Because wavelet time
+resolution adapts with frequency (narrower window at high frequencies) instead of
+using STFT's single fixed 1.024 s window, it is inherently less exposed to the same
+edge-contamination issue. The wavelet grand-average shows a short, sharper transient
+(~0.3–0.5 s post-cue) near the mu/beta border that the STFT version smooths away —
+consistent with STFT's coarser temporal resolution, independent of the baseline bug
+above.
+
+---
+
 ## Experiment 1 — CNN Subject-Pooled
 
 **Scripts:** `src/train.py`, `src/evaluate.py`  

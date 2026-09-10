@@ -507,7 +507,14 @@ def plot_all_subjects_summary(suffix: str = TRAIN_SUFFIX):
         try:
             raw = load_raw(subj, session)
             apply_filter(raw)
-            epochs = extract_epochs(raw)
+            if suffix == EVAL_SUFFIX:
+                # Evaluation sessions only carry the generic cue 783 — the
+                # true left/right label comes from MOABB (see eval_labels.py),
+                # same as process_subject() does for the E split.
+                session_labels = get_eval_labels(subj)[session]
+                epochs = extract_epochs_eval(raw, session_labels)
+            else:
+                epochs = extract_epochs(raw)
             nl = len(epochs["left"])  if "left"  in epochs.event_id else 0
             nr = len(epochs["right"]) if "right" in epochs.event_id else 0
             n_left_list.append(nl)
