@@ -54,9 +54,22 @@ FILT_HIGH     = 30.0  # Hz
 FILT_METHOD   = "fir"  # FIR filter with Hamming window (MNE default)
 
 # Epoching (temporal segmentation)
-EPOCH_TMIN    = -0.5  # s before cue onset (baseline)
+# EPOCH_TMIN reaches back to the trial start (verified empirically in
+# verify_timeline.py: trial_start -> cue onset = 3.000s exact, std=0, across
+# all 45 GDF files), NOT just -0.5s. This gives the baseline reference window
+# enough buffer before the epoch's own extraction edge to avoid STFT
+# zero-padding contamination (see EXPERIMENTS.md "Diagnostic Finding" and its
+# reprocessing follow-up). BASELINE is a clean 1s window, 2s away from that edge.
+EPOCH_TMIN    = -3.0  # s before cue onset (full pre-cue fixation period)
 EPOCH_TMAX    =  4.0  # s after cue onset
-BASELINE      = (-0.5, 0.0)   # window for baseline correction
+BASELINE      = (-1.0, 0.0)   # clean baseline reference window for ERSP normalisation
+
+# ERSP analysis/output window — this is the time axis that actually gets
+# resized to IMG_TIME_BINS and fed to the models. Unchanged from the original
+# pipeline; only the raw extraction (EPOCH_TMIN above) was extended to fix the
+# baseline measurement.
+ANALYSIS_TMIN = -0.5
+ANALYSIS_TMAX =  4.0
 
 # Epoch rejection threshold (maximum amplitude artefact)
 REJECT_THRESH = 100e-6   # 100 µV on any channel
