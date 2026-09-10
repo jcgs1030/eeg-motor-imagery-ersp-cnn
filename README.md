@@ -254,6 +254,28 @@ narrative including the label-bug discovery and fix.
 
 ---
 
+## Known Methodological Finding — ERSP Baseline Window (pending reprocessing)
+
+The baseline window used to normalise every ERSP tensor (`BASELINE = (-0.5, 0.0)`,
+`src/config.py`) is shorter than the 1.024 s STFT window used to estimate it, so the
+baseline reference leaks post-cue signal. This flattens the ERD/ERS contrast visible
+in grand-average plots and biases the tensors that feed every model in Experiments
+1–5b below.
+
+Confirmed with the full 3 s pre-cue fixation period as baseline instead: the expected
+contralateral ERD reappears (S04 alone: -2.87 dB; 9 subjects pooled: -0.98 dB, same
+direction). See [`results/baseline_bug_before_fix/`](results/baseline_bug_before_fix/)
+for the before/diagnostic/confirmation images, and
+[`EXPERIMENTS.md`](EXPERIMENTS.md#diagnostic-finding--baseline-window-contamination-identified-reprocessing-pending)
+for the full write-up.
+
+**Status:** identified and confirmed, **not yet applied**. All results below were
+trained on ERSP tensors with the original (contaminated) baseline window.
+Reprocessing — regenerating the ERSP tensors with an extended baseline and
+re-running Experiments 1–5b — is planned as a separate follow-up.
+
+---
+
 ## References
 
 - Leeb, R. et al. (2008). *BCI Competition 2008 – Graz Data Set B*. Graz University of Technology.
