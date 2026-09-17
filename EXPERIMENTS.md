@@ -223,10 +223,26 @@ the ERSP was implemented for side-by-side comparison (`results/figures/stft_vs_w
 `results/figures/ersp_grand_average_wavelet_{T,E,both}.png`). Because wavelet time
 resolution adapts with frequency (narrower window at high frequencies) instead of
 using STFT's single fixed 1.024 s window, it is inherently less exposed to the same
-edge-contamination issue. The wavelet grand-average shows a short, sharper transient
-(~0.3–0.5 s post-cue) near the mu/beta border that the STFT version smooths away —
-consistent with STFT's coarser temporal resolution, independent of the baseline bug
-above.
+edge-contamination issue.
+
+**Post-reprocessing observation:** with the corrected baseline, the STFT grand-average
+(`ersp_grand_average_stft_both.png`) still shows the population-level contralateral
+ERD only as a small, visually subtle effect (confirmed numerically: C3 mu-band
+Δ ≈ -0.98 dB Right vs. -0.15 dB Left, pooled across 9 subjects) — the fixed-width
+STFT window smooths the ~0.5-1.5 s post-cue transient into the surrounding baseline
+period. The **wavelet grand-average makes the same effect visually obvious**: in
+`ersp_grand_average_wavelet_both.png`, C3-Right and C4-Left both show a clearly
+deeper mu-band patch concentrated at ~0.5-1.5 s post-cue that C3-Left and C4-Right
+do not, at the population level (9 subjects, ~3260 trials/class) — not just for a
+single good subject. The pattern is consistent in both the T-only
+(`ersp_grand_average_wavelet_T.png`) and E-only (`ersp_grand_average_wavelet_E.png`)
+splits, i.e. it survives the offline→online protocol change.
+
+This is the clearest evidence in the project that the transform choice materially
+affects what the ERD/ERS pattern looks like at the population level, even though the
+production pipeline (and the CNN models) still use STFT. It does not change any
+classifier result (no model was trained on wavelet-based tensors) — it is a
+visualisation/interpretability finding, not a new pipeline output.
 
 ---
 
