@@ -80,10 +80,20 @@ def compute_ersp_image(epoch_data: np.ndarray,
     bl_mask = (t_abs >= BASELINE[0]) & (t_abs <= BASELINE[1])
     if bl_mask.sum() == 0:
         bl_mask[0] = True  # fallback: use first frame
-    baseline_mean = power[:, bl_mask].mean(axis=-1, keepdims=True) + 1e-12
+
+    # A fixed epsilon like 1e-12 is NOT negligible here: MNE stores EEG in
+    # volts, so squared STFT power sits in the ~1e-12..1e-27 range (verified
+    # empirically) - a 1e-12 absolute epsilon was comparable to or larger
+    # than the real baseline power for most trials, silently inflating the
+    # denominator and biasing every ERSP value strongly negative (median was
+    # -12..-13 dB instead of the expected -1..-3 dB range from the ERD/ERS
+    # literature; see EXPERIMENTS.md "Diagnostic Finding"). Scale epsilon to
+    # this trial's own power range instead, so it only guards against log(0).
+    eps = power.max() * 1e-12
+    baseline_mean = power[:, bl_mask].mean(axis=-1, keepdims=True) + eps
 
     # ── Divisive ERSP (in dB) ──
-    ersp = 10 * np.log10(power / baseline_mean + 1e-12)
+    ersp = 10 * np.log10(power / baseline_mean + eps)
 
     # ── Crop to the analysis/output window (unchanged from before the fix) ──
     analysis_mask = (t_abs >= ANALYSIS_TMIN) & (t_abs <= ANALYSIS_TMAX)
@@ -152,8 +162,11 @@ def compute_ersp_image_wavelet(epoch_data: np.ndarray,
     bl_mask = (t_abs >= BASELINE[0]) & (t_abs <= BASELINE[1])
     if bl_mask.sum() == 0:
         bl_mask[0] = True
-    baseline_mean = power[:, bl_mask].mean(axis=-1, keepdims=True) + 1e-12
-    ersp = 10 * np.log10(power / baseline_mean + 1e-12)
+    # See compute_ersp_image() for why a relative epsilon is required here
+    # (a fixed 1e-12 is not negligible against volts^2-scale EEG power).
+    eps = power.max() * 1e-12
+    baseline_mean = power[:, bl_mask].mean(axis=-1, keepdims=True) + eps
+    ersp = 10 * np.log10(power / baseline_mean + eps)
 
     analysis_mask = (t_abs >= ANALYSIS_TMIN) & (t_abs <= ANALYSIS_TMAX)
     ersp_analysis = ersp[:, analysis_mask]
