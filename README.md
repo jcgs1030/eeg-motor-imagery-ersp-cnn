@@ -202,22 +202,27 @@ Full experimental narrative and per-experiment analysis in [`EXPERIMENTS.md`](EX
 
 | Model | Test Accuracy |
 |---|---|
-| EEGNet | 73.2% |
-| ShallowConvNet | 70.7% |
-| **SpectNet** | **74.5%** |
+| EEGNet | 70.1% |
+| ShallowConvNet | 58.4% |
+| SpectNet | 70.0% |
 
-Before the ERSP baseline-window fix (see "Known Methodological Finding" below),
-all three pooled models scored ~48–50% (chance). Fixing the baseline window fixed
-this — see [`EXPERIMENTS.md`](EXPERIMENTS.md#experiment-1--cnn-subject-pooled) for
-the full before/after table and the proposed explanation.
+Two independent ERSP bugs were found and fixed here (see "Known Methodological
+Findings" below): a too-short baseline window, and a numerical epsilon
+comparable in scale to the EEG power itself. Before either fix, all three
+pooled models scored ~48–50% (chance). The baseline-window fix alone pushed
+them to 70.7–74.5%; the epsilon fix (needed for physiologically correct ERSP
+values) then cost a few points back, and collapsed ShallowConvNet specifically
+to near-chance. See
+[`EXPERIMENTS.md`](EXPERIMENTS.md#experiment-1--cnn-subject-pooled) for the
+full three-stage before/after table.
 
 ### Experiment 2 — CNN Subject-Specific
 
 | Model | Accuracy | F1-score | Kappa |
 |---|---|---|---|
-| EEGNet | 72.0% ± 14.5% | 69.2% ± 18.4% | 0.440 |
-| ShallowConvNet | 69.0% ± 14.2% | 68.4% ± 14.6% | 0.381 |
-| SpectNet | 72.7% ± 14.4% | 70.4% ± 18.4% | 0.453 |
+| EEGNet | 67.9% ± 11.7% | 67.5% ± 12.0% | 0.358 |
+| ShallowConvNet | 55.7% ± 4.8% | 54.5% ± 6.2% | 0.114 |
+| SpectNet | 71.0% ± 13.2% | 68.7% ± 17.2% | 0.419 |
 
 ### Experiment 3 — CSP Baselines
 
@@ -250,10 +255,12 @@ the full before/after table and the proposed explanation.
 ### Key Finding
 
 **Best method: FBCSP+LDA at 75.9%** — consistent with the BCI-IV-2b literature for
-3-channel classifiers, closely followed by a single pooled SpectNet CNN at 74.5%
-(Experiment 1) with no per-subject tuning at all. High inter-subject variance
-(±13–16%) reflects genuine differences in individual EEG motor imagery responses
-(S04 > 90%, S02/S03 ~50–58%).
+3-channel classifiers, now clearly ahead of every ERSP+CNN method (best CNN:
+EEGNet/SpectNet pooled, ~70%). Both ERSP bugs were worth fixing for scientific
+correctness, but neither, once fixed, gave the CNN methods an edge over the
+classical multi-band approach on this dataset — see "Known Methodological
+Findings" below. High inter-subject variance (±12–16%) reflects genuine
+differences in individual EEG motor imagery responses (S04 > 90%, S02/S03 ~50–58%).
 
 See [`results/riemannian/figures/comparison_all_methods.png`](results/riemannian/figures/comparison_all_methods.png)
 for the full visual comparison, and [`EXPERIMENTS.md`](EXPERIMENTS.md) for the detailed
@@ -261,27 +268,41 @@ narrative including the label-bug discovery and fix.
 
 ---
 
-## Known Methodological Finding — ERSP Baseline Window (fixed and reprocessed)
+## Known Methodological Findings — ERSP Computation (fixed and reprocessed, twice)
 
-The baseline window originally used to normalise every ERSP tensor
-(`BASELINE = (-0.5, 0.0)`) was shorter than the 1.024 s STFT window used to
-estimate it, so the baseline reference leaked post-cue signal — flattening the
-ERD/ERS contrast and biasing the tensors that feed every CNN.
+Two independent bugs were found in `compute_ersp_image()` and fixed in
+sequence. Both were necessary for scientifically defensible ERSP values;
+neither one improved classification accuracy — if anything, together they
+made the CNN methods less competitive against the classical baselines. This
+is itself worth reading as a finding, not just the fixes.
 
-Confirmed with the full 3 s pre-cue fixation period as baseline instead: the
-expected contralateral ERD reappears (S04 alone: -2.87 dB; 9 subjects pooled:
--0.98 dB, same direction). See
-[`results/baseline_bug_before_fix/`](results/baseline_bug_before_fix/) for the
-before/diagnostic/confirmation images.
+**1. Baseline window too short.** `BASELINE = (-0.5, 0.0)` was shorter than
+the 1.024 s STFT window used to estimate it, so the baseline reference leaked
+post-cue signal — flattening the ERD/ERS contrast. Confirmed with the full 3 s
+pre-cue fixation period as baseline instead: the expected contralateral ERD
+reappears (S04 alone: -2.87 dB; 9 subjects pooled: -0.98 dB, same direction).
+See [`results/baseline_bug_before_fix/`](results/baseline_bug_before_fix/) for
+the before/diagnostic/confirmation images. Fixed by extending
+`EPOCH_TMIN`/`BASELINE` in `src/config.py`.
 
-**Status: fixed and reprocessed.** `EPOCH_TMIN`/`BASELINE` were extended in
-`src/config.py`, all ERSP tensors were regenerated, and Experiments 1–5b above
-reflect the corrected data. The fix mattered most for Experiment 1 (CNN,
-subject-pooled): all three architectures jumped from ~48–50% (chance) to
-70.7–74.5%. The classical baselines (Experiments 3–5b) were unaffected, since
-they operate on raw filtered epochs rather than ERSP tensors. Full before/after
-tables and the proposed explanation are in
-[`EXPERIMENTS.md`](EXPERIMENTS.md#diagnostic-finding--baseline-window-contamination-fixed-and-reprocessed).
+**2. Numerical epsilon comparable to signal scale.** A fixed `epsilon = 1e-12`
+added for `log(0)` safety was the same order of magnitude as the actual EEG
+power (MNE stores amplitude in volts, so squared STFT power sits in the
+~1e-12 to 1e-27 range) — this silently biased every ERSP value strongly
+negative, saturating 77-96% of the mu/beta bands at the ±6 dB clip floor.
+Fixed by scaling the epsilon to each trial's own power range
+(`eps = power.max() * 1e-12`), which brought the median ERSP value from an
+implausible -12/-13 dB down to a literature-plausible -2 dB. Confirmed
+visually with a classic Pfurtscheller-style ERD curve
+(`results/figures/erd_curve_classic_grandaverage_C3.png`): beta-band grand
+average now shows a clean -10 to -12% contralateral ERD.
+
+**Net effect on classification:** the baseline-window fix alone took pooled
+CNNs from chance (~48-50%) to 70.7-74.5%. The epsilon fix then cost 2-4 points
+for EEGNet/SpectNet and collapsed ShallowConvNet to near-chance
+(55.7% ± 4.8%). Full three-stage before/after tables and the working
+hypothesis for why are in
+[`EXPERIMENTS.md`](EXPERIMENTS.md#second-diagnostic-finding--ersp-epsilon-bias-fixed-and-reprocessed).
 
 ---
 

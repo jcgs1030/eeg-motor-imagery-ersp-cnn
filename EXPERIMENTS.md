@@ -246,6 +246,128 @@ visualisation/interpretability finding, not a new pipeline output.
 
 ---
 
+## Second Diagnostic Finding — ERSP Epsilon Bias (fixed and reprocessed)
+
+> **Status: APPLIED.** `src/ersp.py`'s `compute_ersp_image()` and
+> `compute_ersp_image_wavelet()` were fixed, all ERSP tensors were regenerated
+> again, and Experiments 1-2 (the only ones that consume ERSP tensors) were
+> re-run a second time. This is a second, independent bug from the baseline-window
+> one above — found while investigating why the advisor's expected ERD/ERS
+> scale (literature convention ±3 dB) looked nothing like ours.
+
+### Root cause
+
+`compute_ersp_image()` added a fixed `epsilon = 1e-12` to both the baseline
+denominator and the final power ratio, "for numerical stability" against
+`log(0)`. MNE stores EEG amplitude in volts, so squared STFT power sits in the
+**~1e-12 to 1e-27** range (verified empirically: `power.min()=4.37e-27,
+power.max()=1.59e-12` for a representative trial) — i.e. the epsilon was the
+*same order of magnitude as the signal itself*, not negligible. This silently
+inflated the denominator in `10*log10(power/baseline_mean + eps)`, biasing
+every ERSP value strongly negative.
+
+### Evidence
+
+Before the fix, decoding the stored `[0,1]` tensors back to dB (`db = X*12 -
+6`) showed the mu/beta bands were almost entirely saturated at the -6 dB clip
+floor:
+
+| Band | Median (should be ≈ -1 to -3 dB per ERD/ERS literature) | % of pixels clipped at -6 dB floor |
+|---|---|---|
+| Mu (8-13 Hz) | **-6.00 dB** (at the floor) | 76.7% |
+| Beta (14-30 Hz) | **-6.00 dB** (at the floor) | 95.6% |
+
+Recomputing the *unclipped* dB directly from raw signal (bypassing the stored
+tensors) confirmed the true values were far more extreme than any reasonable
+ERD/ERS magnitude — median -12 to -13 dB, with outliers to -71 dB. Scaling the
+epsilon to the trial's own power range (`eps = power.max() * 1e-12`) instead
+of a fixed absolute constant immediately narrowed this to a literature-
+plausible range:
+
+| Method | Median | % beyond ±6 dB |
+|---|---|---|
+| Fixed epsilon (bug) | -12.4 dB | n/a (already clipped away) |
+| Relative epsilon (fix) | **-2.01 dB** | 32.7% (genuine single-trial outliers, not bug) |
+
+### Fix applied
+
+`eps = power.max() * 1e-12` replaces the fixed `1e-12` in both
+`compute_ersp_image()` and `compute_ersp_image_wavelet()` (`src/ersp.py`). The
+±6 dB clip and [0,1] scaling in the output format are unchanged — with the
+epsilon fixed, ±6 dB now genuinely covers the bulk of the distribution instead
+of clipping ~80-96% of it away.
+
+### Reprocessing outcome — classification did NOT improve
+
+All ERSP tensors were regenerated a second time and Experiments 1 and 2
+(the only ERSP-consuming experiments) were re-trained. Classical baselines
+(Experiments 3-5b) are unaffected, as before.
+
+| Model | Baseline-fix only | + Epsilon fix |
+|---|---|---|
+| EEGNet, pooled (1 subj) | 67.5% | 61.9% |
+| EEGNet, pooled (9 subj) | 73.2% | 70.1% |
+| ShallowConvNet, pooled (1 subj) | 69.7% | **51.2%** |
+| ShallowConvNet, pooled (9 subj) | 70.7% | **58.4%** |
+| SpectNet, pooled (1 subj) | 63.4% | 65.0% |
+| SpectNet, pooled (9 subj) | 74.5% | 70.0% |
+| EEGNet, subject-specific | 72.0% ± 14.5% | 67.9% ± 11.7% |
+| ShallowConvNet, subject-specific | 69.0% ± 14.2% | **55.7% ± 4.8%** |
+| SpectNet, subject-specific | 72.7% ± 14.4% | 71.0% ± 13.2% |
+
+Contrary to the hypothesis that the saturated ±6 dB clip was destroying useful
+information for the CNN, fixing it **did not improve any model**, and
+**ShallowConvNet collapsed to near-chance** across all 9 subjects (kappa
+-0.01 to 0.24 per subject; confusion matrix confirms partial, not total, class
+collapse — 50.6% Left / 66.3% Right recall for the pooled model, not a
+degenerate single-class predictor). EEGNet and SpectNet regressed mildly
+(1-4 points) in most configurations.
+
+**Working hypothesis:** the pre-fix representation, while numerically wrong,
+was also extremely sparse/low-entropy (most pixels pinned to exactly 0.0) —
+this may have acted as an accidental strong regulariser for CNNs training on
+very little data (~200-440 trials/subject). The corrected representation
+exposes the real, noisier trial-to-trial variability, which a small-sample
+CNN may overfit to rather than generalise from. ShallowConvNet's square→log
+nonlinearity (designed to mimic CSP log-variance) is plausibly more sensitive
+to this than EEGNet/SpectNet's more conventional conv-ReLU stacks, but this
+was not independently verified (e.g. by ablating the nonlinearity) and is
+offered as the most likely explanation, not a confirmed cause.
+
+**Conclusion for the thesis:** the epsilon fix (like the baseline-window fix)
+is methodologically necessary — the pre-fix ERSP values were not
+scientifically defensible (a "conservative" ±6 dB clip that silently discarded
+80-96% of the real dynamic range is not a design choice, it is broken
+normalisation). But **physiological correctness and classification accuracy
+are separate questions**: correcting a bug is not guaranteed to, and here did
+not, improve downstream classification. Both findings should be presented to
+the thesis committee together, not just the encouraging one.
+
+### Classic ERD/ERS curve (Pfurtscheller-style), post both fixes
+
+As a complementary visualisation to the 2D ERSP heatmaps (where the whole
+frequency axis is always positive — time-frequency spectrograms do not show
+"negative" values on the y-axis; ERD/ERS is encoded in colour, not position),
+a classic 1D band-averaged curve was generated: `% power change vs. baseline`
+over time, per frequency band, matching the standard Pfurtscheller ERD/ERS
+plot convention the advisor expected.
+
+`results/figures/erd_curve_classic_grandaverage_C3.png` — grand-average, 9
+subjects, channel C3, Left vs. Right, mu and beta bands:
+
+- **Beta (14-30 Hz):** clean, textbook contralateral ERD — Right dips to
+  -10% to -12% and stays there from ~0.5s to ~3.5s post-cue; Left stays
+  positive (+5% to +10%) for most of the trial. SEM bands barely overlap.
+- **Mu (8-13 Hz):** same directional contrast (Right more negative than Left)
+  but noisier — Left rises to implausibly large ERS values (+60%), likely
+  reflecting mu's larger natural amplitude/variability rather than a cleaner
+  task-specific signal. Beta is the band to lead with when presenting this.
+
+`results/figures/erd_curve_classic_S04_C3.png` shows the same plot for S04
+alone, for comparison with the grand-average.
+
+---
+
 ## Experiment 1 — CNN Subject-Pooled
 
 **Scripts:** `src/train.py`, `src/evaluate.py`  
@@ -265,10 +387,21 @@ for the full cohort. Two variants: subject 1 only, and all 9 subjects.
 
 ### Results
 
-**Post baseline-window fix** (see "Diagnostic Finding" above — these results
-were trained on ERSP tensors with the corrected baseline; the chance-level
-numbers from the original, contaminated-baseline pipeline are kept below for
-the historical record):
+**Current (post baseline-window fix AND epsilon fix — see "Second Diagnostic
+Finding" above):**
+
+| Model | Subjects | Accuracy | Precision | Recall | F1-score | Kappa |
+|---|---|---|---|---|---|---|
+| EEGNet | 1 | 61.9% | 61.9% | 61.9% | 61.8% | 0.238 |
+| ShallowConvNet | 1 | 51.2% | 52.7% | 51.2% | 43.6% | 0.025 |
+| SpectNet | 1 | 65.0% | 65.1% | 65.0% | 65.0% | 0.300 |
+| EEGNet | all (9) | 70.1% | 70.1% | 70.1% | 70.1% | 0.401 |
+| ShallowConvNet | all (9) | 58.4% | 58.6% | 58.4% | 58.2% | 0.169 |
+| SpectNet | all (9) | **70.0%** | 70.0% | 70.0% | 70.0% | **0.400** |
+
+Intermediate results, after the baseline-window fix but before the epsilon fix
+(kept for the record — these were trained on ERSP tensors where ±6 dB
+saturated 77-96% of the mu/beta bands):
 
 | Model | Subjects | Accuracy | Precision | Recall | F1-score | Kappa |
 |---|---|---|---|---|---|---|
@@ -277,9 +410,9 @@ the historical record):
 | SpectNet | 1 | 62.2% | 70.3% | 62.2% | 58.0% | 0.244 |
 | EEGNet | all (9) | 73.2% | 73.8% | 73.2% | 73.0% | 0.463 |
 | ShallowConvNet | all (9) | 70.7% | 70.8% | 70.7% | 70.7% | 0.414 |
-| SpectNet | all (9) | **74.5%** | 75.1% | 74.5% | 74.4% | **0.491** |
+| SpectNet | all (9) | 74.5% | 75.1% | 74.5% | 74.4% | 0.491 |
 
-Original results, before the baseline-window fix (kept for the record):
+Original results, before either fix (kept for the record):
 
 | Model | Subjects | Accuracy | Kappa |
 |---|---|---|---|
@@ -291,24 +424,22 @@ Original results, before the baseline-window fix (kept for the record):
 | SpectNet | all (9) | 48.9% | −0.023 |
 
 ### Analysis
-**Before the fix**, all models performed at chance level (50%) and confusion
+**Before any fix**, all models performed at chance level (50%) and confusion
 matrices showed collapse to predicting one class. Two causes were proposed at
-the time:
+the time: (1) subject-pooled approach invalid for EEG due to inter-subject
+variability, (2) domain shift T→E (offline vs. online sessions).
 
-1. Subject-pooled approach invalid for EEG due to inter-subject variability.
-2. Domain shift T→E (offline vs. online sessions).
+**After the baseline-window fix**, this framing turned out to be wrong or at
+least incomplete: pooled CNNs jumped to 63-75%, matching or exceeding
+Experiment 2, showing the pooled approach itself was not inherently invalid.
 
-**After the baseline-window fix, this framing turned out to be wrong** — or at
-least incomplete. Once the ERSP tensors carry the genuine (bias-free)
-contralateral ERD/ERS pattern, subject-pooled CNNs generalise T→E well above
-chance (63–75% across all 6 model/subject-count combinations), matching or
-slightly exceeding the subject-specific results in Experiment 2. This means
-neither cause above was the true bottleneck: the pooled approach itself is not
-inherently invalid, and the T→E domain shift, while real, is not severe enough
-to prevent generalisation once the input representation is measured correctly.
-See "Reprocessing outcome" in the Diagnostic Finding section above for the
-proposed explanation (a baseline-window artefact that likely differed between
-T and E segments, which the pooled model was previously forced to rely on).
+**After the epsilon fix** (a second, independent bug — see "Second Diagnostic
+Finding" above), accuracy for EEGNet and SpectNet regressed mildly (2-4
+points) and ShallowConvNet collapsed to near-chance (51-58%). The genuinely
+physiologically-correct ERSP representation does not classify better than the
+numerically-biased one — if anything, slightly worse for this dataset's
+sample size. See "Second Diagnostic Finding" for the proposed explanation
+(the pre-fix sparsity may have acted as accidental regularisation).
 
 ---
 
@@ -322,7 +453,16 @@ One model trained per (architecture, subject) pair using only that subject's
 own sessions 1–3. Evaluated on that subject's sessions 4–5.
 This is the standard intra-subject protocol in the BCI literature.
 
-### Results (mean ± std across 9 subjects) — **post baseline-window fix**
+### Results (mean ± std across 9 subjects) — **current, post both fixes**
+
+| Model | Accuracy | F1-score | Kappa |
+|---|---|---|---|
+| EEGNet | 67.9% ± 11.7% | 67.5% ± 12.0% | 0.358 ± 0.235 |
+| ShallowConvNet | **55.7% ± 4.8%** | 54.5% ± 6.2% | **0.114 ± 0.096** |
+| SpectNet | 71.0% ± 13.2% | 68.7% ± 17.2% | 0.419 ± 0.263 |
+
+After the baseline-window fix but before the epsilon fix (kept for the
+record):
 
 | Model | Accuracy | F1-score | Kappa |
 |---|---|---|---|
@@ -330,16 +470,18 @@ This is the standard intra-subject protocol in the BCI literature.
 | ShallowConvNet | 69.0% ± 14.2% | 68.4% ± 14.6% | 0.381 ± 0.284 |
 | SpectNet | 72.7% ± 14.4% | 70.4% ± 18.4% | 0.453 ± 0.288 |
 
-These are statistically unchanged from the pre-fix numbers (72.6%/70.2%/73.3%,
-all within ±1% and inside the std bars) — see the "Reprocessing outcome"
-discussion above for why Experiment 1, not this one, was where the fix mattered.
-
 ### Analysis
-Subject-specific CNNs are well above chance (69–73% mean), confirming that
-the EEG signal contains discriminative MI patterns. High variance across
-subjects (±14–15%) reflects genuine inter-subject variability: some subjects
-(e.g. S04, 95.0% with EEGNet) are "BCI-literate" with very clear ERD/ERS
-patterns, while others (e.g. S02, S03) remain close to chance.
+EEGNet and SpectNet remain clearly above chance (68–71% mean) after the
+epsilon fix, though a few points lower than before it. **ShallowConvNet is
+the exception: it dropped to 55.7% ± 4.8%** (kappa 0.114, barely above zero)
+— uniformly weak across all 9 subjects, including subjects that were
+previously strong (S04: 89.4%→62.2%, S08: 87.8%→61.9%). This is not simply
+"more realistic, still-genuine signal" — it is a specific architecture
+failing to learn from the corrected representation with this little data.
+See "Second Diagnostic Finding — ERSP Epsilon Bias" above for the full
+before/after comparison and the working hypothesis. High variance across
+subjects for EEGNet/SpectNet (±12–13%) still reflects genuine inter-subject
+variability: S04 remains the strongest responder, S02/S03 remain weak.
 
 ---
 
@@ -500,33 +642,40 @@ can reach the same range with a single pooled model.
 
 ## Cross-Experiment Comparison — Corrected Results
 
-All results below use **true evaluation labels** from MOABB, and ERSP-based
-methods (Experiment 1) use the **corrected baseline window** (see "Diagnostic
-Finding" above). Metric: accuracy across sessions 4–5 (evaluation); Experiments
-2–5b are mean ± std across 9 subjects (subject-specific protocol); Experiment 1
-is a single pooled model, no std to report.
+All results below use **true evaluation labels** from MOABB. ERSP-based
+methods (Experiment 1-2) reflect **both** ERSP fixes — the baseline-window fix
+and the epsilon fix (see the two "Diagnostic Finding" sections above). Metric:
+accuracy across sessions 4-5 (evaluation); Experiments 2-5b are mean ± std
+across 9 subjects (subject-specific protocol); Experiment 1 is a single pooled
+model, no std to report.
 
 | Method | Exp | Accuracy | F1-score | Kappa |
 |---|---|---|---|---|
-| EEGNet (pooled, all 9) | 1 | 73.2% | 73.0% | 0.463 |
-| ShallowConvNet (pooled, all 9) | 1 | 70.7% | 70.7% | 0.414 |
-| **SpectNet (pooled, all 9)** | **1** | **74.5%** | **74.4%** | **0.491** |
-| EEGNet (subject-specific) | 2 | 72.0% ± 14.5% | 69.2% ± 18.4% | 0.440 |
-| ShallowConvNet (subject-specific) | 2 | 69.0% ± 14.2% | 68.4% ± 14.6% | 0.381 |
-| SpectNet (subject-specific) | 2 | 72.7% ± 14.4% | 70.4% ± 18.4% | 0.453 |
-| CSP+LDA | 3 | 71.0% ± 12.6% | 69.8% ± 13.3% | 0.419 |
-| CSP+SVM | 3 | 72.5% ± 12.0% | 71.4% ± 13.1% | 0.450 |
-| EA+CSP+LDA | 4 | 71.0% ± 12.6% | 69.8% ± 13.3% | 0.419 |
-| EA+CSP+SVM | 4 | 72.5% ± 12.0% | 71.4% ± 13.1% | 0.450 |
-| FBCSP+LDA | 5a | 75.9% ± 13.4% | 75.5% ± 13.7% | 0.519 |
+| **FBCSP+LDA** | **5a** | **75.9% ± 13.4%** | **75.5% ± 13.7%** | **0.519** |
 | FBCSP+SVM | 5a | 73.6% ± 13.5% | 72.7% ± 14.5% | 0.472 |
-| Riem-MDM | 5b | 70.8% ± 13.8% | 69.2% ± 15.4% | 0.416 |
+| EEGNet (pooled, all 9) | 1 | 70.1% | 70.1% | 0.401 |
+| SpectNet (pooled, all 9) | 1 | 70.0% | 70.0% | 0.400 |
 | Riem-TS+LDA | 5b | 72.9% ± 13.4% | 72.0% ± 13.9% | 0.459 |
+| CSP+SVM | 3 | 72.5% ± 12.0% | 71.4% ± 13.1% | 0.450 |
+| EA+CSP+SVM | 4 | 72.5% ± 12.0% | 71.4% ± 13.1% | 0.450 |
+| SpectNet (subject-specific) | 2 | 71.0% ± 13.2% | 68.7% ± 17.2% | 0.419 |
+| CSP+LDA | 3 | 71.0% ± 12.6% | 69.8% ± 13.3% | 0.419 |
+| EA+CSP+LDA | 4 | 71.0% ± 12.6% | 69.8% ± 13.3% | 0.419 |
+| Riem-MDM | 5b | 70.8% ± 13.8% | 69.2% ± 15.4% | 0.416 |
+| EEGNet (subject-specific) | 2 | 67.9% ± 11.7% | 67.5% ± 12.0% | 0.358 |
+| ShallowConvNet (pooled, all 9) | 1 | 58.4% | 58.2% | 0.169 |
+| ShallowConvNet (subject-specific) | 2 | 55.7% ± 4.8% | 54.5% ± 6.2% | 0.114 |
 
-**Best method: FBCSP+LDA at 75.9% mean accuracy (Kappa 0.519)** — but a single
-pooled SpectNet model (Experiment 1, no per-subject tuning) now reaches 74.5%,
-essentially matching it. Before the baseline-window fix, the same pooled
-SpectNet model scored 48.9% (chance).
+**Best method: FBCSP+LDA at 75.9% mean accuracy (Kappa 0.519)**, now clearly
+ahead of every ERSP+CNN method. This ranking changed after the epsilon fix
+(see "Second Diagnostic Finding" above) — before it, pooled SpectNet reached
+74.5%, essentially tying FBCSP. Fixing a second, independent bug in the ERSP
+computation *cost* the CNN methods their edge rather than adding to it, which
+is itself a finding worth presenting: the physiologically correct
+representation is not the higher-accuracy one, at least not at this dataset's
+sample size. ShallowConvNet, both pooled and subject-specific, is now the
+weakest method in the entire comparison — see "Second Diagnostic Finding" for
+why.
 
 ---
 
@@ -549,23 +698,32 @@ SpectNet model scored 48.9% (chance).
    Fixed by extending the pre-cue window to the full 3s fixation period. See
    "Diagnostic Finding — Baseline Window Contamination" above.
 
-4. **Subject-pooling is competitive with subject-specific, once the baseline bug
-   is fixed:** pooled CNN models (all 9 subjects, Experiment 1) now reach
-   70.7–74.5%, matching or slightly exceeding subject-specific training
-   (Experiment 2, 69.0–72.7%) — with a single shared model instead of 9 separate
-   ones. Before the fix, pooled models were stuck at chance (48–50%).
+4. **Subject-pooling is viable for EEG, once the baseline bug is fixed:**
+   pooled CNN models (Experiment 1) went from chance (48–50%) to genuinely
+   above-chance performance with a single shared model instead of 9 separate
+   ones — the pooled approach itself was never the problem.
 
-5. **FBCSP is the top performer (75.9%), but pooled SpectNet is close behind
-   (74.5%):** FBCSP's multi-band decomposition still captures band-specific
-   ERD/ERS differences that the single 8–30 Hz band misses, but a correctly
-   computed ERSP representation lets a single pooled CNN nearly match it
-   without any per-subject tuning.
+5. **A second, independent bug (`1e-12` epsilon, comparable in scale to
+   volts²-range EEG power) was silently clipping 77–96% of the mu/beta bands
+   to the same floor value.** Fixing it produced ERSP magnitudes matching the
+   ERD/ERS literature (median ≈ -2 dB instead of an artificial -12 to -13 dB),
+   confirmed visually with a classic Pfurtscheller-style ERD curve (beta band,
+   grand-average: Right dips to -10 to -12%, Left stays positive). But it did
+   **not** improve classification — EEGNet/SpectNet regressed mildly and
+   ShallowConvNet collapsed to near-chance (55.7% ± 4.8%, kappa 0.114). See
+   "Second Diagnostic Finding — ERSP Epsilon Bias".
 
-6. **High inter-subject variability (±13–16%):** Some subjects show near-perfect
-   classification (S04 > 90%, up to 95.0% with EEGNet subject-specific) while
-   others are near chance (S02, S03 ~50–58%). This is consistent with the
-   BCI-IV-2b literature and reflects genuine differences in the clarity of
-   individual EEG motor imagery responses.
+6. **FBCSP remains the top performer (75.9%)** and, after both ERSP fixes, is
+   now clearly ahead of every ERSP+CNN method (best CNN: EEGNet/SpectNet
+   pooled at ~70%). The two ERSP bugs both needed fixing for scientific
+   correctness, but neither one, once corrected, gave the CNN methods an edge
+   over the classical multi-band approach on this dataset.
+
+7. **High inter-subject variability (±12–16%):** Some subjects show near-perfect
+   classification (S04 > 90%, up to 95.0% with EEGNet subject-specific before
+   the epsilon fix) while others are near chance (S02, S03 ~50–58%). This is
+   consistent with the BCI-IV-2b literature and reflects genuine differences in
+   the clarity of individual EEG motor imagery responses.
 
 ---
 
