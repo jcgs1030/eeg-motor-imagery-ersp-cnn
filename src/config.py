@@ -82,8 +82,16 @@ ICA_SEED      = 42
 # ── ERSP spectrogram ─────────────────────────────────────────────────────────
 # Transform: STFT with Hann window
 STFT_WIN_LEN  = 256   # samples (1.024 s at 250 Hz)
-STFT_OVERLAP  = 0.75  # 75% overlap → hop of 64 samples
-STFT_HOP      = int(STFT_WIN_LEN * (1 - STFT_OVERLAP))  # 64 samples
+# Hop chosen so the number of REAL STFT frames inside the analysis window
+# (ANALYSIS_TMIN..ANALYSIS_TMAX, 4.5s) is close to IMG_TIME_BINS (128), so
+# _resize_2d() only needs to interpolate ~1.02x instead of ~7.1x. With the
+# previous 64-sample hop, only 18 real frames existed and the other ~110
+# output time-bins were pure bilinear interpolation between them, giving an
+# illusion of ~35ms temporal resolution when the real resolution was the
+# ~256ms hop. See EXPERIMENTS.md "Third Diagnostic Finding — STFT Hop /
+# resize_2d Undersampling".
+STFT_HOP      = 9     # samples (36 ms) -> 125 real frames in the 4.5s analysis window
+STFT_OVERLAP  = 1 - (STFT_HOP / STFT_WIN_LEN)  # ~96.5%, derived from STFT_HOP
 
 # Frequency range of ERSP images
 ERSP_FMIN     = 8.0   # Hz (lower mu band)
