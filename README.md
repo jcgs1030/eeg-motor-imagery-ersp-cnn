@@ -202,27 +202,29 @@ Full experimental narrative and per-experiment analysis in [`EXPERIMENTS.md`](EX
 
 | Model | Test Accuracy |
 |---|---|
-| EEGNet | 70.1% |
-| ShallowConvNet | 58.4% |
-| SpectNet | 70.0% |
+| EEGNet | 70.0% |
+| ShallowConvNet | 60.3% |
+| **SpectNet** | **71.7%** |
 
-Two independent ERSP bugs were found and fixed here (see "Known Methodological
-Findings" below): a too-short baseline window, and a numerical epsilon
-comparable in scale to the EEG power itself. Before either fix, all three
-pooled models scored ~48–50% (chance). The baseline-window fix alone pushed
-them to 70.7–74.5%; the epsilon fix (needed for physiologically correct ERSP
-values) then cost a few points back, and collapsed ShallowConvNet specifically
-to near-chance. See
+Three independent ERSP bugs were found and fixed here (see "Known
+Methodological Findings" below): a too-short baseline window, a numerical
+epsilon comparable in scale to the EEG power itself, and an STFT hop so
+large that 110 of the 128 output time-bins were pure interpolation. Before
+any fix, all three pooled models scored ~48–50% (chance). The baseline-window
+fix alone pushed them to 70.7–74.5%; the epsilon fix then cost a few points
+back and collapsed ShallowConvNet specifically to near-chance; the hop fix
+partially recovered ground for SpectNet (70.0%→71.7%, its best result) while
+leaving ShallowConvNet's collapse unchanged. See
 [`EXPERIMENTS.md`](EXPERIMENTS.md#experiment-1--cnn-subject-pooled) for the
-full three-stage before/after table.
+full four-stage before/after table.
 
 ### Experiment 2 — CNN Subject-Specific
 
 | Model | Accuracy | F1-score | Kappa |
 |---|---|---|---|
-| EEGNet | 67.9% ± 11.7% | 67.5% ± 12.0% | 0.358 |
-| ShallowConvNet | 55.7% ± 4.8% | 54.5% ± 6.2% | 0.114 |
-| SpectNet | 71.0% ± 13.2% | 68.7% ± 17.2% | 0.419 |
+| EEGNet | 69.0% ± 11.6% | 68.5% ± 12.0% | 0.379 |
+| ShallowConvNet | 54.5% ± 6.9% | 52.6% ± 8.6% | 0.090 |
+| SpectNet | 70.8% ± 13.1% | 68.7% ± 17.0% | 0.416 |
 
 ### Experiment 3 — CSP Baselines
 
@@ -255,11 +257,10 @@ full three-stage before/after table.
 ### Key Finding
 
 **Best method: FBCSP+LDA at 75.9%** — consistent with the BCI-IV-2b literature for
-3-channel classifiers, now clearly ahead of every ERSP+CNN method (best CNN:
-EEGNet/SpectNet pooled, ~70%). Both ERSP bugs were worth fixing for scientific
-correctness, but neither, once fixed, gave the CNN methods an edge over the
-classical multi-band approach on this dataset — see "Known Methodological
-Findings" below. High inter-subject variance (±12–16%) reflects genuine
+3-channel classifiers, still clearly ahead of every ERSP+CNN method (best CNN:
+SpectNet pooled, 71.7%). All three ERSP fixes were worth applying for
+scientific correctness, but only the hop fix gave a CNN method a boost — see
+"Known Methodological Findings" below. High inter-subject variance (±12–16%) reflects genuine
 differences in individual EEG motor imagery responses (S04 > 90%, S02/S03 ~50–58%).
 
 See [`results/riemannian/figures/comparison_all_methods.png`](results/riemannian/figures/comparison_all_methods.png)
@@ -268,13 +269,13 @@ narrative including the label-bug discovery and fix.
 
 ---
 
-## Known Methodological Findings — ERSP Computation (fixed and reprocessed, twice)
+## Known Methodological Findings — ERSP Computation (fixed and reprocessed, three times)
 
-Two independent bugs were found in `compute_ersp_image()` and fixed in
-sequence. Both were necessary for scientifically defensible ERSP values;
-neither one improved classification accuracy — if anything, together they
-made the CNN methods less competitive against the classical baselines. This
-is itself worth reading as a finding, not just the fixes.
+Three independent issues were found in the ERSP computation (`src/ersp.py`)
+and fixed in sequence, plus a purely cosmetic colormap change. All were
+necessary for scientifically defensible, legible ERSP values; only one of
+the three (the hop fix) improved classification accuracy. This is itself
+worth reading as a finding, not just the fixes.
 
 **1. Baseline window too short.** `BASELINE = (-0.5, 0.0)` was shorter than
 the 1.024 s STFT window used to estimate it, so the baseline reference leaked
@@ -297,12 +298,35 @@ visually with a classic Pfurtscheller-style ERD curve
 (`results/figures/erd_curve_classic_grandaverage_C3.png`): beta-band grand
 average now shows a clean -10 to -12% contralateral ERD.
 
+**3. STFT hop too large relative to the output size.** `_resize_2d()` stretches
+the raw STFT output to `(22, 128)` via bilinear interpolation. The frequency
+axis needed ~1.00x (22 real bins already). The time axis needed **7.11x**:
+with the original `STFT_HOP=64` (256ms), the 4.5s analysis window produced
+only 18 real STFT frames — the other ~110 output time-bins were pure
+interpolation, giving an illusion of ~35ms temporal resolution when the real
+resolution was ~256ms. Raised by the thesis advisor. Fixed by reducing
+`STFT_HOP` to 9 samples (36ms, 125 real frames, ~1.02x interpolation).
+
+**4. Colormap choice (visualisation only, no data/model change).** Even with
+all three fixes above, the grand-average heatmap plotted with a smooth
+diverging colormap (`RdYlBu_r`) still made the ERD hard to see at a glance.
+Switched to `jet` (the classic EEGLAB-style ERSP convention) — its sharper
+hue transitions make the 2-6 dB contralateral signal visible without further
+explanation. See `src/diagnostic_db_heatmap.py` for a standalone script that
+plots the grand-average in real (signed) dB units instead of the [0,1] scale
+used for training.
+
 **Net effect on classification:** the baseline-window fix alone took pooled
 CNNs from chance (~48-50%) to 70.7-74.5%. The epsilon fix then cost 2-4 points
 for EEGNet/SpectNet and collapsed ShallowConvNet to near-chance
-(55.7% ± 4.8%). Full three-stage before/after tables and the working
-hypothesis for why are in
-[`EXPERIMENTS.md`](EXPERIMENTS.md#second-diagnostic-finding--ersp-epsilon-bias-fixed-and-reprocessed).
+(54.5% ± 6.9%, unrecovered by the hop fix). The hop fix was net-neutral-to-
+positive, improving SpectNet pooled to 71.7% (its best result across all
+three fixes) without hurting EEGNet. Full before/after tables and the working
+hypotheses are in
+[`EXPERIMENTS.md`](EXPERIMENTS.md#second-diagnostic-finding--ersp-epsilon-bias-fixed-and-reprocessed)
+(epsilon) and
+[`EXPERIMENTS.md`](EXPERIMENTS.md#third-diagnostic-finding--stft-hop--resize_2d-undersampling-fixed-and-reprocessed)
+(hop).
 
 ---
 
