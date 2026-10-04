@@ -244,6 +244,17 @@ production pipeline (and the CNN models) still use STFT. It does not change any
 classifier result (no model was trained on wavelet-based tensors) — it is a
 visualisation/interpretability finding, not a new pipeline output.
 
+**Superseded by later fixes (partially):** the comparison above was run before
+the epsilon fix (Second Diagnostic Finding) and the hop/colormap fixes (Third
+and Fourth). With those applied, the **STFT** grand-average now also shows a
+clear population-level contralateral ERD on its own
+(`results/figures/ersp_grand_average_stft_both.png`,
+`results/figures/ersp_grand_average_dB_heatmap_jet.png`) — wavelet is no
+longer necessary to see the effect. The wavelet images referenced above were
+not regenerated with the later fixes and reflect the intermediate
+(baseline-fixed-only) pipeline state; they remain valid as a transform
+comparison, just not as "proof you need wavelet to see this."
+
 ---
 
 ## Second Diagnostic Finding — ERSP Epsilon Bias (fixed and reprocessed)
@@ -397,9 +408,9 @@ unchanged.
 ### Evidence
 
 A direct visual test (before committing to a full reprocessing) compared S04
-and S03 at the old vs. new hop (`results/figures/test_finehop_S04T.png` /
-`test_finehop_S03T.png`, superseded by the regenerated production files):
-S04's contralateral ERD became sharply localised (a well-defined dark patch
+and S03 at the old vs. new hop (one-off test images, deleted after the
+production files below were regenerated with the fix): S04's contralateral
+ERD became sharply localised (a well-defined dark patch
 in mu band, extending into 17.5-25Hz beta, concentrated at ~0.5-2s post-cue)
 versus the old diffuse version; S03 (the "weak responder" control) stayed
 flat under both hop settings - confirming the sharper pattern is signal, not
