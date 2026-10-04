@@ -238,7 +238,7 @@ def plot_ersp_grand_average_wavelet(subjects: list = None, suffix: str = "both",
             grand_avg = sum_by_class[cls_label][ch_i] / n_trials_pooled[cls_label]
             im = ax.imshow(
                 grand_avg, aspect="auto", origin="lower",
-                cmap="RdYlBu_r", vmin=0, vmax=1,
+                cmap="jet", vmin=0, vmax=1,
                 extent=[ANALYSIS_TMIN, ANALYSIS_TMAX, ERSP_FMIN, ERSP_FMAX]
             )
             ax.axvline(0, color="white", linewidth=1.0, linestyle="--")
@@ -295,7 +295,7 @@ def plot_stft_vs_wavelet(subject: int, suffix: str = TRAIN_SUFFIX,
     for ax, img, title in [(axes[0], img_stft, "STFT (Hann, 256-sample window)"),
                            (axes[1], img_wav,  "Morlet CWT (6 cycles)")]:
         im = ax.imshow(
-            img, aspect="auto", origin="lower", cmap="RdYlBu_r",
+            img, aspect="auto", origin="lower", cmap="jet",
             vmin=0, vmax=1,
             extent=[ANALYSIS_TMIN, ANALYSIS_TMAX, ERSP_FMIN, ERSP_FMAX]
         )
@@ -449,7 +449,7 @@ def plot_ersp_examples(subject: int, suffix: str = TRAIN_SUFFIX,
                 img = X[trial_idx, ch_i, :, :]  # (F, T)
                 im = ax.imshow(
                     img, aspect="auto", origin="lower",
-                    cmap="RdYlBu_r",
+                    cmap="jet",
                     extent=[ANALYSIS_TMIN, ANALYSIS_TMAX, ERSP_FMIN, ERSP_FMAX]
                 )
                 if col == 0:
@@ -506,7 +506,7 @@ def plot_ersp_average(subject: int, suffix: str = TRAIN_SUFFIX,
             avg_ersp = X[mask, ch_i, :, :].mean(axis=0)
             im = ax.imshow(
                 avg_ersp, aspect="auto", origin="lower",
-                cmap="RdYlBu_r", vmin=0, vmax=1,
+                cmap="jet", vmin=0, vmax=1,
                 extent=[ANALYSIS_TMIN, ANALYSIS_TMAX, ERSP_FMIN, ERSP_FMAX]
             )
             ax.axvline(0, color="white", linewidth=1.0, linestyle="--")
@@ -584,7 +584,7 @@ def plot_ersp_grand_average(subjects: list = None, suffix: str = "both",
             grand_avg = stacked.mean(axis=0)
             im = ax.imshow(
                 grand_avg, aspect="auto", origin="lower",
-                cmap="RdYlBu_r", vmin=0, vmax=1,
+                cmap="jet", vmin=0, vmax=1,
                 extent=[ANALYSIS_TMIN, ANALYSIS_TMAX, ERSP_FMIN, ERSP_FMAX]
             )
             ax.axvline(0, color="white", linewidth=1.0, linestyle="--")
