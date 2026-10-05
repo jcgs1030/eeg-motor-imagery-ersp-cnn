@@ -15,9 +15,10 @@ diverging maps like RdBu_r for the modest (2-6 dB) magnitudes typical of
 motor-imagery ERD/ERS - see EXPERIMENTS.md "Fourth Diagnostic Finding".
 
 Usage:
-    python src/diagnostic_db_heatmap.py                  # jet, +-6dB
+    python src/diagnostic_db_heatmap.py                  # jet, +-6dB, pooled 9 subjects
     python src/diagnostic_db_heatmap.py --cmap turbo
     python src/diagnostic_db_heatmap.py --clip 4.0
+    python src/diagnostic_db_heatmap.py --subject 4       # single subject instead of pooled
 """
 
 import argparse
@@ -43,13 +44,17 @@ def main():
     parser = argparse.ArgumentParser(description="Grand-average ERSP heatmap in real dB units")
     parser.add_argument("--cmap", type=str, default="jet")
     parser.add_argument("--clip", type=float, default=DB_CLIP)
+    parser.add_argument("--subject", type=int, default=None,
+                        help="Single subject (1-9) instead of the 9-subject pooled average")
     args = parser.parse_args()
+
+    subjects = [args.subject] if args.subject is not None else SUBJECTS
 
     sum_db = {0: np.zeros((N_CHANNELS, IMG_FREQ_BINS, IMG_TIME_BINS)),
              1: np.zeros((N_CHANNELS, IMG_FREQ_BINS, IMG_TIME_BINS))}
     counts = {0: 0, 1: 0}
 
-    for subj in SUBJECTS:
+    for subj in subjects:
         for suf in ("T", "E"):
             p = DATA_PROC / f"S{subj:02d}{suf}-ersp.npz"
             if not p.exists():
@@ -65,8 +70,9 @@ def main():
                 counts[cls] += int(mask.sum())
 
     fig, axes = plt.subplots(N_CHANNELS, 2, figsize=(10, 4 * N_CHANNELS))
+    title_scope = f"Sujeto S{args.subject:02d}" if args.subject is not None else "Grand-average — 9 sujetos pooled"
     fig.suptitle(
-        f"Grand-average ERSP en dB reales — 9 sujetos pooled — colormap '{args.cmap}'",
+        f"ERSP en dB reales — {title_scope} — colormap '{args.cmap}'",
         fontsize=11, fontweight="bold"
     )
     for ch_i, ch_name in enumerate(CHANNELS[:N_CHANNELS]):
@@ -85,7 +91,8 @@ def main():
             plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04, label="ERSP (dB)")
     plt.tight_layout()
 
-    out = FIGURES_DIR / f"ersp_grand_average_dB_heatmap_{args.cmap}.png"
+    scope_tag = f"S{args.subject:02d}" if args.subject is not None else "grand_average"
+    out = FIGURES_DIR / f"ersp_{scope_tag}_dB_heatmap_{args.cmap}.png"
     fig.savefig(out, dpi=150, bbox_inches="tight")
     print(f"Saved: {out}")
 

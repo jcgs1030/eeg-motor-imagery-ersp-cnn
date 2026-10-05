@@ -33,6 +33,17 @@ from config import (
 
 mne.set_log_level("WARNING")
 
+# All ERSP plots show REAL signed dB (matches the clip baked into
+# compute_ersp_image's [0,1] normalisation below), not the raw [0,1] scale -
+# the advisor asked for a dB colour bar matching the classic EEGLAB
+# convention (see EXPERIMENTS.md "Fourth Diagnostic Finding").
+DB_CLIP = 6.0
+
+
+def _to_db(norm: np.ndarray) -> np.ndarray:
+    """Undo compute_ersp_image's [0,1] normalisation -> real signed dB."""
+    return norm * (2.0 * DB_CLIP) - DB_CLIP
+
 
 # ── Core ERSP ────────────────────────────────────────────────────────────────
 
@@ -235,10 +246,10 @@ def plot_ersp_grand_average_wavelet(subjects: list = None, suffix: str = "both",
     for ch_i, ch_name in enumerate(CHANNELS[:N_CHANNELS]):
         for cls_i, (cls_label, cls_name) in enumerate([(0, "Left"), (1, "Right")]):
             ax = axes[ch_i, cls_i]
-            grand_avg = sum_by_class[cls_label][ch_i] / n_trials_pooled[cls_label]
+            grand_avg = _to_db(sum_by_class[cls_label][ch_i] / n_trials_pooled[cls_label])
             im = ax.imshow(
                 grand_avg, aspect="auto", origin="lower",
-                cmap="jet", vmin=0, vmax=1,
+                cmap="jet", vmin=-DB_CLIP, vmax=DB_CLIP,
                 extent=[ANALYSIS_TMIN, ANALYSIS_TMAX, ERSP_FMIN, ERSP_FMAX]
             )
             ax.axvline(0, color="white", linewidth=1.0, linestyle="--")
@@ -249,7 +260,7 @@ def plot_ersp_grand_average_wavelet(subjects: list = None, suffix: str = "both",
             ax.set_xlabel("Time (s)", fontsize=8)
             ax.tick_params(labelsize=7)
             plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04,
-                         label="Norm. ERSP").ax.tick_params(labelsize=6)
+                         label="ERSP (dB)").ax.tick_params(labelsize=6)
 
     plt.tight_layout()
 
@@ -288,15 +299,15 @@ def plot_stft_vs_wavelet(subject: int, suffix: str = TRAIN_SUFFIX,
 
     signal = ep_data[trial_idx, ch_idx, :]
 
-    img_stft = compute_ersp_image(signal, sfreq=SFREQ)
-    img_wav  = compute_ersp_image_wavelet(signal, sfreq=SFREQ)
+    img_stft = _to_db(compute_ersp_image(signal, sfreq=SFREQ))
+    img_wav  = _to_db(compute_ersp_image_wavelet(signal, sfreq=SFREQ))
 
     fig, axes = plt.subplots(1, 2, figsize=(11, 4.2))
     for ax, img, title in [(axes[0], img_stft, "STFT (Hann, 256-sample window)"),
                            (axes[1], img_wav,  "Morlet CWT (6 cycles)")]:
         im = ax.imshow(
             img, aspect="auto", origin="lower", cmap="jet",
-            vmin=0, vmax=1,
+            vmin=-DB_CLIP, vmax=DB_CLIP,
             extent=[ANALYSIS_TMIN, ANALYSIS_TMAX, ERSP_FMIN, ERSP_FMAX]
         )
         ax.axvline(0, color="white", linewidth=1.0, linestyle="--")
@@ -305,7 +316,7 @@ def plot_stft_vs_wavelet(subject: int, suffix: str = TRAIN_SUFFIX,
         ax.set_title(title, fontsize=10)
         ax.set_xlabel("Time (s)")
         ax.set_ylabel("Frequency (Hz)")
-        plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04, label="Norm. ERSP")
+        plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04, label="ERSP (dB)")
 
     fig.suptitle(
         f"{tag} | {channel} | {cls_name.capitalize()} imagery | trial {trial_idx}\n"
@@ -446,10 +457,10 @@ def plot_ersp_examples(subject: int, suffix: str = TRAIN_SUFFIX,
         for ch_i, ch_name in enumerate(CHANNELS[:N_CHANNELS]):
             for col, trial_idx in enumerate(indices):
                 ax = axes[row, col] if n_cols > 1 else axes[row]
-                img = X[trial_idx, ch_i, :, :]  # (F, T)
+                img = _to_db(X[trial_idx, ch_i, :, :])  # (F, T), real dB
                 im = ax.imshow(
                     img, aspect="auto", origin="lower",
-                    cmap="jet",
+                    cmap="jet", vmin=-DB_CLIP, vmax=DB_CLIP,
                     extent=[ANALYSIS_TMIN, ANALYSIS_TMAX, ERSP_FMIN, ERSP_FMAX]
                 )
                 if col == 0:
@@ -459,7 +470,8 @@ def plot_ersp_examples(subject: int, suffix: str = TRAIN_SUFFIX,
                     ax.set_xlabel("Time (s)", fontsize=8)
                 ax.axvline(0, color="white", linewidth=0.8, linestyle="--")
                 ax.tick_params(labelsize=7)
-                plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04).ax.tick_params(labelsize=6)
+                plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04,
+                             label="ERSP (dB)").ax.tick_params(labelsize=6)
             row += 1
 
     plt.tight_layout()
@@ -503,10 +515,10 @@ def plot_ersp_average(subject: int, suffix: str = TRAIN_SUFFIX,
             if mask.sum() == 0:
                 ax.set_visible(False)
                 continue
-            avg_ersp = X[mask, ch_i, :, :].mean(axis=0)
+            avg_ersp = _to_db(X[mask, ch_i, :, :].mean(axis=0))
             im = ax.imshow(
                 avg_ersp, aspect="auto", origin="lower",
-                cmap="jet", vmin=0, vmax=1,
+                cmap="jet", vmin=-DB_CLIP, vmax=DB_CLIP,
                 extent=[ANALYSIS_TMIN, ANALYSIS_TMAX, ERSP_FMIN, ERSP_FMAX]
             )
             ax.axvline(0, color="white", linewidth=1.0, linestyle="--")
@@ -517,7 +529,7 @@ def plot_ersp_average(subject: int, suffix: str = TRAIN_SUFFIX,
             ax.set_xlabel("Time (s)", fontsize=8)
             ax.tick_params(labelsize=7)
             plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04,
-                         label="Norm. ERSP").ax.tick_params(labelsize=6)
+                         label="ERSP (dB)").ax.tick_params(labelsize=6)
 
     plt.tight_layout()
 
@@ -581,10 +593,10 @@ def plot_ersp_grand_average(subjects: list = None, suffix: str = "both",
         for cls_i, (cls_label, cls_name) in enumerate([(0, "Left"), (1, "Right")]):
             ax = axes[ch_i, cls_i]
             stacked = np.concatenate(X_by_class[cls_label][ch_i], axis=0)
-            grand_avg = stacked.mean(axis=0)
+            grand_avg = _to_db(stacked.mean(axis=0))
             im = ax.imshow(
                 grand_avg, aspect="auto", origin="lower",
-                cmap="jet", vmin=0, vmax=1,
+                cmap="jet", vmin=-DB_CLIP, vmax=DB_CLIP,
                 extent=[ANALYSIS_TMIN, ANALYSIS_TMAX, ERSP_FMIN, ERSP_FMAX]
             )
             ax.axvline(0, color="white", linewidth=1.0, linestyle="--")
@@ -595,7 +607,7 @@ def plot_ersp_grand_average(subjects: list = None, suffix: str = "both",
             ax.set_xlabel("Time (s)", fontsize=8)
             ax.tick_params(labelsize=7)
             plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04,
-                         label="Norm. ERSP").ax.tick_params(labelsize=6)
+                         label="ERSP (dB)").ax.tick_params(labelsize=6)
 
     plt.tight_layout()
 

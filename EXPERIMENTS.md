@@ -591,6 +591,44 @@ n=9 - promising enough to revisit with a larger augmentation budget (more
 transform variety, or mixup between same-class trials) rather than treating
 ShallowConvNet's collapse as solved.
 
+### 5. Fine-tuning SpectNet pooled — per-subject and global continuation (`src/experiment_finetune.py`)
+
+Motivated by the literature review (BCI-IV-2a fine-tuning schedules reporting
++22pp from conservative per-subject fine-tuning of a pooled model — see
+references added to the advisor document). Both variants start from the same
+converged checkpoint, `results/spectnet_all.pth`.
+
+**Per-subject mode**: freeze `conv1`/`conv2` (the convolutional feature
+extractor), fine-tune only `fc1`+`fc2` with a low learning rate (1e-4) on
+each subject's own ~340-trial training split, early stopping on that
+subject's own validation loss (patience=10). Produces 9 specialised models.
+
+**Global mode**: unfreeze everything, continue training the SAME pooled
+checkpoint on the full 9-subject pooled training set again at a lower
+learning rate (3e-5), early stopping as before. Produces one model (answers
+"fine-tuning sobre el promedio/pooled en vez de por sujeto").
+
+| | Mean accuracy | vs. pooled baseline (71.7%) |
+|---|---|---|
+| Pooled baseline (no fine-tuning) | 71.7% | — |
+| Per-subject fine-tuning | 71.6% | +0.0pp, Wilcoxon p=0.984 |
+| Global continuation | 71.5% | -0.1pp, Wilcoxon p=0.488 |
+
+Neither variant helps, and both are a long way from the +22pp some IV-2a
+fine-tuning papers report. Per-subject fine-tuning is a wash in aggregate but
+has real per-subject spread (S05 +3.1pp, S08 +2.5pp, S09 +1.9pp vs. S02
+-2.5pp, S06 -3.1pp, S03 -1.6pp) - it helps subjects that already have
+reasonable signal and hurts weak-signal subjects further, consistent with
+the "S02/S03 near chance" finding in section 05 of the advisor document: if
+the base representation carries little class-relevant information for a
+subject, no amount of local adaptation recovers it. The global continuation
+run converges to its best validation loss at epoch 1 and plateaus
+immediately (early stopping triggers within ~10 epochs) - the pooled
+checkpoint was already at its optimum before this experiment started, so
+there was nothing left to gain from more training on the same pooled data,
+consistent with the "early stopping always binds, not MAX_EPOCHS" finding
+discussed with the user.
+
 ### A note on code safety found while running these experiments
 
 `train_one_subject()` was writing its checkpoint and figures unconditionally
