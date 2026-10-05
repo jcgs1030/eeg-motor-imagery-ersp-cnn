@@ -63,11 +63,11 @@ def cnn_proba_for_subject(subject: int, model) -> tuple[np.ndarray, np.ndarray]:
     return softmax(logits), y
 
 
-def main():
-    parser = argparse.ArgumentParser(description="FBCSP+LDA / SpectNet ensemble")
-    parser.add_argument("--weight", type=float, default=0.5,
-                        help="Weight on FBCSP in the average (default 0.5 = simple average)")
-    args = parser.parse_args()
+def compute_ensemble_per_subject(weight: float = 0.5, subjects: list = None) -> list[dict]:
+    """Core computation, reusable from other scripts (e.g. plotting).
+    Returns a list of per-subject dicts with FBCSP / SpectNet / ensemble
+    accuracy and kappa."""
+    subjects = subjects or SUBJECTS
 
     ckpt = torch.load("results/spectnet_all.pth", map_location="cpu", weights_only=False)
     model = get_model("spectnet", n_channels=N_CHANNELS, n_freq=IMG_FREQ_BINS,
@@ -76,7 +76,7 @@ def main():
     model.eval()
 
     rows = []
-    for subj in SUBJECTS:
+    for subj in subjects:
         # load_epochs() crops to MI_TMIN..MI_TMAX internally (see train_fbcsp.py)
         X_train, y_train = load_epochs(subj, "T")
         X_test_fbcsp, y_test_fbcsp = load_epochs(subj, "E")
@@ -92,14 +92,13 @@ def main():
             f"S{subj:02d}: trial order mismatch between FBCSP and CNN test sets!"
         y_test = y_test_fbcsp
 
-        w = args.weight
-        proba_ens = w * proba_fbcsp + (1 - w) * proba_cnn
+        proba_ens = weight * proba_fbcsp + (1 - weight) * proba_cnn
 
         pred_fbcsp = proba_fbcsp.argmax(axis=1)
         pred_cnn   = proba_cnn.argmax(axis=1)
         pred_ens   = proba_ens.argmax(axis=1)
 
-        row = {
+        rows.append({
             "subject": subj,
             "acc_fbcsp": accuracy_score(y_test, pred_fbcsp),
             "acc_cnn":   accuracy_score(y_test, pred_cnn),
@@ -107,9 +106,19 @@ def main():
             "kappa_fbcsp": cohen_kappa_score(y_test, pred_fbcsp),
             "kappa_cnn":   cohen_kappa_score(y_test, pred_cnn),
             "kappa_ens":   cohen_kappa_score(y_test, pred_ens),
-        }
-        rows.append(row)
-        print(f"  S{subj:02d}: FBCSP={row['acc_fbcsp']:.1%}  SpectNet={row['acc_cnn']:.1%}  "
+        })
+    return rows
+
+
+def main():
+    parser = argparse.ArgumentParser(description="FBCSP+LDA / SpectNet ensemble")
+    parser.add_argument("--weight", type=float, default=0.5,
+                        help="Weight on FBCSP in the average (default 0.5 = simple average)")
+    args = parser.parse_args()
+
+    rows = compute_ensemble_per_subject(weight=args.weight)
+    for row in rows:
+        print(f"  S{row['subject']:02d}: FBCSP={row['acc_fbcsp']:.1%}  SpectNet={row['acc_cnn']:.1%}  "
               f"Ensemble={row['acc_ens']:.1%}")
 
     acc_fbcsp = np.array([r["acc_fbcsp"] for r in rows])

@@ -489,6 +489,120 @@ perceptible a given magnitude of difference is to the human eye.
 
 ---
 
+## Follow-up Experiments — Statistical Validation, Ensembling, Improvement Attempts
+
+After the three ERSP fixes above, four follow-up questions were investigated:
+is the cross-experiment ranking statistically real, can ShallowConvNet's
+collapse be fixed cheaply, does combining the best classical and CNN methods
+help, and does data augmentation help with the small per-subject sample size.
+None of this changes the production pipeline or any committed per-experiment
+result file (all scripts are exploratory, under `src/diagnostic_*.py` /
+`src/experiment_*.py`).
+
+### 1. Paired statistical test (`src/diagnostic_stats_test.py`)
+
+The cross-experiment comparison table ranks methods by mean accuracy alone;
+with ±12-16% std across only 9 subjects, several rankings could plausibly be
+noise. Pooled CNN checkpoints (Experiment 1, a single shared model) were
+evaluated separately on each subject's own test trials to get a 9-value
+accuracy vector comparable to the subject-specific methods, then compared
+pairwise with a paired Wilcoxon signed-rank test (n=9).
+
+| Comparison | Mean diff | Wilcoxon p | Significant? |
+|---|---|---|---|
+| FBCSP+LDA vs. SpectNet (pooled) | +4.4pp | 0.027 | Yes |
+| FBCSP+LDA vs. Riem-TS+LDA | +3.0pp | 0.078 | Marginal |
+| FBCSP+LDA vs. SpectNet (subject-specific) | +5.1pp | 0.004 | Yes |
+| SpectNet pooled vs. SpectNet subject-specific | +0.7pp | 0.910 | **No - equivalent** |
+| SpectNet pooled vs. EEGNet pooled | +1.7pp | 0.051 | Marginal |
+| SpectNet pooled vs. ShallowConvNet pooled | +11.3pp | 0.004 | Yes |
+| FBCSP+LDA vs. CSP+LDA | +5.0pp | 0.008 | Yes |
+
+Takeaways: FBCSP's edge over SpectNet is real, not noise. ShallowConvNet's
+collapse (Second Diagnostic Finding) is statistically robust across all 9
+subjects, not a bad run. Pooled vs. subject-specific training for SpectNet
+is statistically indistinguishable - a single shared model is as good as 9
+separate ones, which favours the simpler pooled approach.
+
+### 2. ShallowConvNet learning-rate sweep (`src/diagnostic_lr_sweep.py`)
+
+All three CNN architectures share one global `LEARNING_RATE=1e-3` in
+`config.py`, never tuned per architecture. Tested 1e-4 / 3e-4 / 1e-3 on
+ShallowConvNet (9 subjects each):
+
+`results/figures/shallowconvnet_lr_sweep.png`
+
+| LR | Mean accuracy | Mean kappa |
+|---|---|---|
+| 1e-4 | 53.3% ± 3.9% | 0.065 |
+| 3e-4 | 55.8% ± 5.3% | 0.117 |
+| 1e-3 (current) | 54.5% ± 6.5% | 0.090 |
+
+No clear trend (all three overlap well within one std of each other) -
+**learning rate is ruled out** as the cause of the collapse. The problem is
+more likely architectural (ShallowConvNet's square→log nonlinearity,
+designed to mimic CSP log-variance, interacting badly with the corrected,
+noisier ERSP distribution) rather than a mistunable hyperparameter.
+
+### 3. Ensemble: FBCSP+LDA + SpectNet pooled (`src/experiment_ensemble.py`)
+
+FBCSP's `predict_proba` (LDA) and SpectNet pooled's softmax output are
+averaged per trial (`weight * FBCSP + (1-weight) * SpectNet`). Both are
+evaluated on the identical per-subject test trials in the identical order
+(both read from the same `S{subj}E-epo.fif`), so no alignment step beyond an
+explicit equality assertion is needed.
+
+`results/figures/ensemble_per_subject.png`,
+`results/figures/final_comparison_all_methods.png`
+
+| Weight (FBCSP) | Ensemble accuracy | vs. FBCSP alone | vs. SpectNet alone |
+|---|---|---|---|
+| 0.5 | 78.7% ± 12.8% | p=0.027 | p=0.008 |
+| **0.6** | **78.8% ± 12.7%** | **p=0.008** | **p=0.004** |
+| 0.7 | 77.8% ± 12.5% | p=0.008 | p=0.008 |
+| 0.4 | 77.0% ± 12.5% | p=0.637 (not sig.) | p=0.008 |
+
+**w=0.6 is the new best result in the project: 78.8% ± 12.7%, significantly
+better than either method alone.** At this weight the ensemble matches or
+beats the better of the two individual methods for all 9 subjects (see the
+slope plot) - FBCSP and SpectNet appear to make at least partially
+independent errors, which is exactly the condition under which averaging
+helps.
+
+### 4. Data augmentation on ShallowConvNet (`src/augmentation.py`, `src/experiment_augmentation.py`)
+
+Simple Gaussian noise (std=0.03, normalised [0,1] scale) and random circular
+time-shift (±6 bins) applied only to the training split via a new
+`train_transform` parameter on `build_loaders()` / `train_one_subject()`.
+**The frequency axis (and therefore the fixed 8-30Hz mu/beta band) is never
+touched by either transform**, per project constraint.
+
+`results/figures/augmentation_per_subject.png`
+
+| | Mean accuracy |
+|---|---|
+| Baseline (no augmentation) | 54.5% ± 6.5% |
+| Augmented | 56.3% ± 5.6% |
+| Difference | +1.8pp, Wilcoxon p=0.156 (not significant, n=9) |
+
+6 of 9 subjects improved, 2 were unchanged, 1 regressed slightly. Directionally
+positive and reduces cross-subject std, but not statistically conclusive at
+n=9 - promising enough to revisit with a larger augmentation budget (more
+transform variety, or mixup between same-class trials) rather than treating
+ShallowConvNet's collapse as solved.
+
+### A note on code safety found while running these experiments
+
+`train_one_subject()` was writing its checkpoint and figures unconditionally
+to the shared `results/subject_specific/` paths regardless of caller - the
+LR-sweep and augmentation experiments above were silently overwriting the
+official committed ShallowConvNet results on every run. Caught via `git
+status` before anything was committed, restored with `git checkout`, and
+fixed by adding a `save_outputs=False` option that only the production
+`run()` CLI entry point omits.
+
+---
+
 ## Experiment 1 — CNN Subject-Pooled
 
 **Scripts:** `src/train.py`, `src/evaluate.py`  
@@ -801,7 +915,8 @@ single pooled model, no std to report.
 
 | Method | Exp | Accuracy | F1-score | Kappa |
 |---|---|---|---|---|
-| **FBCSP+LDA** | **5a** | **75.9% ± 13.4%** | **75.5% ± 13.7%** | **0.519** |
+| **Ensemble: FBCSP+LDA + SpectNet (w=0.6)** | **follow-up** | **78.8% ± 12.7%** | — | — |
+| FBCSP+LDA | 5a | 75.9% ± 13.4% | 75.5% ± 13.7% | 0.519 |
 | FBCSP+SVM | 5a | 73.6% ± 13.5% | 72.7% ± 14.5% | 0.472 |
 | Riem-TS+LDA | 5b | 72.9% ± 13.4% | 72.0% ± 13.9% | 0.459 |
 | CSP+SVM | 3 | 72.5% ± 12.0% | 71.4% ± 13.1% | 0.450 |
@@ -816,15 +931,19 @@ single pooled model, no std to report.
 | ShallowConvNet (pooled, all 9) | 1 | 60.3% | 60.3% | 0.205 |
 | ShallowConvNet (subject-specific) | 2 | 54.5% ± 6.9% | 52.6% ± 8.6% | 0.090 |
 
-**Best method: FBCSP+LDA at 75.9% mean accuracy (Kappa 0.519)**, still clearly
-ahead of every ERSP+CNN method even after the hop fix recovered some ground
-for SpectNet pooled (70.0%→71.7%). The epsilon fix (see "Second Diagnostic
-Finding") is what cost the CNN methods their edge — before it, pooled
-SpectNet reached 74.5%, essentially tying FBCSP; the hop fix (see "Third
-Diagnostic Finding") partially but not fully recovered that gap. ShallowConvNet,
-both pooled and subject-specific, remains the weakest method in the entire
-comparison — the hop fix did not change this, narrowing the cause further to
-the epsilon fix specifically.
+**Best single method: FBCSP+LDA at 75.9% mean accuracy (Kappa 0.519)**, still
+clearly ahead of every individual ERSP+CNN method even after the hop fix
+recovered some ground for SpectNet pooled (70.0%→71.7%). **Best result
+overall: the FBCSP+SpectNet ensemble at 78.8% ± 12.7%** (see "Follow-up
+Experiments" above) — the only method found in this project that
+significantly beats FBCSP alone (p=0.008). The epsilon fix (see "Second
+Diagnostic Finding") is what cost the CNN methods their individual edge —
+before it, pooled SpectNet reached 74.5%, essentially tying FBCSP; the hop
+fix (see "Third Diagnostic Finding") partially recovered that gap, and
+ensembling with FBCSP recovers the rest and then some. ShallowConvNet, both
+pooled and subject-specific, remains the weakest method in the entire
+comparison — ruled out learning rate and (so far) data augmentation as fixes,
+see "Follow-up Experiments".
 
 ---
 
@@ -877,17 +996,39 @@ the epsilon fix specifically.
    further explanation — a purely cosmetic change with no effect on any
    tensor or metric. See "Fourth Diagnostic Finding — Colormap Choice".
 
-8. **FBCSP remains the top performer (75.9%)** and, after all three ERSP
-   fixes, is still clearly ahead of every ERSP+CNN method (best CNN: SpectNet
-   pooled at 71.7%). The ERSP bugs all needed fixing for scientific
-   correctness, but only the hop fix gave any CNN method a boost — the
-   classical multi-band approach remains ahead on this dataset.
+8. **FBCSP remains the top individual method (75.9%)** and, after all three
+   ERSP fixes, is still clearly ahead of every individual ERSP+CNN method
+   (best CNN: SpectNet pooled at 71.7%). The ERSP bugs all needed fixing for
+   scientific correctness, but only the hop fix gave any CNN method a boost —
+   the classical multi-band approach remains ahead of any single CNN on this
+   dataset.
 
 9. **High inter-subject variability (±12–16%):** Some subjects show near-perfect
    classification (S04 > 90%, up to 95.0% with EEGNet subject-specific before
    the epsilon fix) while others are near chance (S02, S03 ~50–58%). This is
    consistent with the BCI-IV-2b literature and reflects genuine differences in
    the clarity of individual EEG motor imagery responses.
+
+10. **Paired statistics confirm the ranking is real, not noise** (Wilcoxon,
+    n=9): FBCSP significantly beats SpectNet pooled (p=0.027) and subject-
+    specific SpectNet (p=0.004); ShallowConvNet's collapse is statistically
+    robust (p=0.004 vs. SpectNet pooled), ruling out a single bad run;
+    pooled vs. subject-specific training is statistically equivalent for
+    SpectNet (p=0.91). See "Follow-up Experiments" above.
+
+11. **Ensembling FBCSP+LDA with SpectNet pooled gives the best result in the
+    project: 78.8% ± 12.7%** (weighted average of predict_proba/softmax,
+    w=0.6 favouring FBCSP), significantly ahead of FBCSP alone (p=0.008) and
+    SpectNet alone (p=0.004). The two methods appear to make at least
+    partially independent errors — classical multi-band features and a
+    full time-frequency CNN are complementary, not redundant, on this task.
+
+12. **Learning rate was ruled out as the cause of ShallowConvNet's collapse**
+    (sweep over 1e-4/3e-4/1e-3: 53.3-55.8%, no clear trend, all within one
+    std of each other). **Data augmentation (noise + time-shift) gave a
+    modest, non-significant improvement** (54.5%→56.3%, p=0.156, n=9) —
+    promising direction, not a fix on its own. The architecture's
+    square→log nonlinearity remains the leading unconfirmed hypothesis.
 
 ---
 

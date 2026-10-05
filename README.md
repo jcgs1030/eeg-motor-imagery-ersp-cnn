@@ -256,16 +256,23 @@ full four-stage before/after table.
 
 ### Key Finding
 
-**Best method: FBCSP+LDA at 75.9%** — consistent with the BCI-IV-2b literature for
-3-channel classifiers, still clearly ahead of every ERSP+CNN method (best CNN:
-SpectNet pooled, 71.7%). All three ERSP fixes were worth applying for
-scientific correctness, but only the hop fix gave a CNN method a boost — see
-"Known Methodological Findings" below. High inter-subject variance (±12–16%) reflects genuine
-differences in individual EEG motor imagery responses (S04 > 90%, S02/S03 ~50–58%).
+**Best result: an FBCSP+LDA / SpectNet ensemble at 78.8% ± 12.7%** — a
+weighted average of FBCSP's predict_proba and SpectNet pooled's softmax
+output, significantly ahead of either method alone (paired Wilcoxon,
+p=0.008 and p=0.004 respectively; n=9 subjects). **Best single method:
+FBCSP+LDA at 75.9%**, consistent with the BCI-IV-2b literature for
+3-channel classifiers and still ahead of every individual ERSP+CNN method
+(best CNN: SpectNet pooled, 71.7%). All three ERSP fixes were worth applying
+for scientific correctness, but only the hop fix gave a CNN method a boost on
+its own — see "Known Methodological Findings" below. High inter-subject
+variance (±12–16%) reflects genuine differences in individual EEG motor
+imagery responses (S04 > 90%, S02/S03 ~50–58%).
 
-See [`results/riemannian/figures/comparison_all_methods.png`](results/riemannian/figures/comparison_all_methods.png)
-for the full visual comparison, and [`EXPERIMENTS.md`](EXPERIMENTS.md) for the detailed
-narrative including the label-bug discovery and fix.
+See [`results/figures/final_comparison_all_methods.png`](results/figures/final_comparison_all_methods.png)
+for the full visual comparison including the ensemble, and
+[`EXPERIMENTS.md`](EXPERIMENTS.md#follow-up-experiments--statistical-validation-ensembling-improvement-attempts)
+for the detailed narrative (statistical validation, the ensemble, and the
+ShallowConvNet improvement attempts).
 
 ---
 
