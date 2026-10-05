@@ -123,7 +123,8 @@ def _predict_all(model, dataset, device):
 
 
 def train_one_subject(model_name: str, subject: int,
-                      device_str: str = DEVICE) -> dict:
+                      device_str: str = DEVICE,
+                      lr: float = LEARNING_RATE) -> dict:
     """
     Train one CNN architecture on a single subject and evaluate it.
 
@@ -132,6 +133,7 @@ def train_one_subject(model_name: str, subject: int,
     model_name : one of 'eegnet', 'shallowconvnet', 'spectnet'
     subject    : integer in [1, 9]
     device_str : 'cpu', 'cuda', or 'mps'
+    lr         : learning rate override (default: config.LEARNING_RATE)
 
     Returns
     -------
@@ -161,7 +163,7 @@ def train_one_subject(model_name: str, subject: int,
     ).to(device)
 
     optimizer = optim.Adam(
-        model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY
+        model.parameters(), lr=lr, weight_decay=WEIGHT_DECAY
     )
     criterion = nn.CrossEntropyLoss()
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(
