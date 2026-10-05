@@ -124,16 +124,26 @@ def _predict_all(model, dataset, device):
 
 def train_one_subject(model_name: str, subject: int,
                       device_str: str = DEVICE,
-                      lr: float = LEARNING_RATE) -> dict:
+                      lr: float = LEARNING_RATE,
+                      train_transform=None,
+                      save_outputs: bool = True) -> dict:
     """
     Train one CNN architecture on a single subject and evaluate it.
 
     Parameters
     ----------
-    model_name : one of 'eegnet', 'shallowconvnet', 'spectnet'
-    subject    : integer in [1, 9]
-    device_str : 'cpu', 'cuda', or 'mps'
-    lr         : learning rate override (default: config.LEARNING_RATE)
+    model_name     : one of 'eegnet', 'shallowconvnet', 'spectnet'
+    subject        : integer in [1, 9]
+    device_str     : 'cpu', 'cuda', or 'mps'
+    lr             : learning rate override (default: config.LEARNING_RATE)
+    train_transform: optional augmentation transform (see augmentation.py),
+                     applied only to the training split.
+    save_outputs   : if False, skip writing the checkpoint and figures to
+                     the shared results/subject_specific/ paths - use this
+                     for diagnostic/exploratory runs (different lr,
+                     augmentation, ...) so they don't clobber the official
+                     committed results. Only run(), the production CLI
+                     entry point, should ever call this with True.
 
     Returns
     -------
@@ -151,7 +161,8 @@ def train_one_subject(model_name: str, subject: int,
         subjects=[subject],
         batch_size=BATCH_SIZE,
         val_split=VAL_SPLIT,
-        seed=RANDOM_SEED
+        seed=RANDOM_SEED,
+        train_transform=train_transform
     )
 
     model = get_model(
@@ -223,20 +234,21 @@ def train_one_subject(model_name: str, subject: int,
           f"acc={metrics['accuracy']:.1%}  kappa={metrics['kappa']:.3f}  "
           f"({elapsed:.0f}s)")
 
-    # Save checkpoint
-    ckpt_path = SS_DIR / f"{model_name}_{subj_tag}.pth"
-    torch.save({
-        "model_name": model_name,
-        "subject":    subject,
-        "best_epoch": best_epoch,
-        "state_dict": best_state,
-        **metrics,
-        "n_params":   model.count_parameters(),
-    }, str(ckpt_path))
+    if save_outputs:
+        # Save checkpoint
+        ckpt_path = SS_DIR / f"{model_name}_{subj_tag}.pth"
+        torch.save({
+            "model_name": model_name,
+            "subject":    subject,
+            "best_epoch": best_epoch,
+            "state_dict": best_state,
+            **metrics,
+            "n_params":   model.count_parameters(),
+        }, str(ckpt_path))
 
-    # Figures
-    _plot_learning_curves(history, model_name, subj_tag, best_epoch)
-    _plot_confusion(y_true, y_pred, model_name, subj_tag)
+        # Figures
+        _plot_learning_curves(history, model_name, subj_tag, best_epoch)
+        _plot_confusion(y_true, y_pred, model_name, subj_tag)
 
     return {
         "model":   model_name,

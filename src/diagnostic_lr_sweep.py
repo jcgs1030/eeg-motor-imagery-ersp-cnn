@@ -45,7 +45,7 @@ def main():
     for lr in args.lrs:
         accs, kappas = [], []
         for subj in args.subjects:
-            r = train_one_subject(args.model, subj, args.device, lr=lr)
+            r = train_one_subject(args.model, subj, args.device, lr=lr, save_outputs=False)
             accs.append(r["accuracy"])
             kappas.append(r["kappa"])
             print(f"  lr={lr:.0e} S{subj:02d}: acc={r['accuracy']*100:.1f}%  kappa={r['kappa']:.3f}")

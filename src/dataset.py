@@ -96,12 +96,33 @@ class ERSPDataset(Dataset):
         return weights
 
 
+class _AugmentedSubset(Dataset):
+    """Wraps a Subset and applies `transform` only to items drawn through
+    this wrapper - used so training-split augmentation never leaks into the
+    validation split, even though both are Subsets of the same underlying
+    ERSPDataset (which itself has no transform set)."""
+
+    def __init__(self, subset, transform):
+        self.subset = subset
+        self.transform = transform
+
+    def __len__(self):
+        return len(self.subset)
+
+    def __getitem__(self, idx):
+        x, y = self.subset[idx]
+        if self.transform is not None:
+            x = self.transform(x)
+        return x, y
+
+
 def build_loaders(subjects: list = None,
                   suffix_train: str = TRAIN_SUFFIX,
                   suffix_test: str = EVAL_SUFFIX,
                   batch_size: int = BATCH_SIZE,
                   val_split: float = VAL_SPLIT,
-                  seed: int = RANDOM_SEED):
+                  seed: int = RANDOM_SEED,
+                  train_transform=None):
     """
     Build training, validation, and test DataLoaders.
 
@@ -111,12 +132,14 @@ def build_loaders(subjects: list = None,
 
     Parameters
     ----------
-    subjects     : list of subjects (None = all)
-    suffix_train : 'T' for training sessions
-    suffix_test  : 'E' for evaluation sessions
-    batch_size   : mini-batch size
-    val_split    : fraction of training set used for validation
-    seed         : random seed for reproducibility
+    subjects       : list of subjects (None = all)
+    suffix_train   : 'T' for training sessions
+    suffix_test    : 'E' for evaluation sessions
+    batch_size     : mini-batch size
+    val_split      : fraction of training set used for validation
+    seed           : random seed for reproducibility
+    train_transform: optional augmentation transform (see augmentation.py),
+                     applied ONLY to the training split - never val/test.
 
     Returns
     -------
@@ -138,6 +161,8 @@ def build_loaders(subjects: list = None,
     train_ds, val_ds = random_split(
         train_full, [n_train, n_val], generator=generator
     )
+    if train_transform is not None:
+        train_ds = _AugmentedSubset(train_ds, train_transform)
 
     train_loader = DataLoader(train_ds, batch_size=batch_size,
                               shuffle=True,  num_workers=0, pin_memory=False)
