@@ -596,16 +596,52 @@ explicit equality assertion is needed.
 | Weight (FBCSP) | Ensemble accuracy | vs. FBCSP alone | vs. SpectNet alone |
 |---|---|---|---|
 | 0.5 | 78.7% ± 12.8% | p=0.027 | p=0.008 |
-| **0.6** | **78.8% ± 12.7%** | **p=0.008** | **p=0.004** |
+| 0.6 | 78.8% ± 12.7% | p=0.008 | p=0.004 |
 | 0.7 | 77.8% ± 12.5% | p=0.008 | p=0.008 |
 | 0.4 | 77.0% ± 12.5% | p=0.637 (not sig.) | p=0.008 |
 
-**w=0.6 is the new best result in the project: 78.8% ± 12.7%, significantly
-better than either method alone.** At this weight the ensemble matches or
-beats the better of the two individual methods for all 9 subjects (see the
-slope plot) - FBCSP and SpectNet appear to make at least partially
-independent errors, which is exactly the condition under which averaging
-helps.
+**Methodological problem (flagged in advisor review, fixed below): `w` here
+was chosen by sweeping it and picking whichever value scored best on this
+same test set** (sessions 4-5) - the set the final number is reported on.
+That is leakage: a hyperparameter tuned against the test set inflates the
+reported accuracy, even if only slightly. See the corrected version
+immediately below for the number that should actually be reported.
+
+#### Corrected: weight chosen on validation, not test (`src/experiment_ensemble_validated.py`)
+
+Per subject, sessions 1-3 (T) are split into T-train/T-val (stratified,
+`test_size=VAL_SPLIT=0.15`, `seed=RANDOM_SEED`). FBCSP+LDA is refit on
+T-train only; `w` is swept on T-val (SpectNet pooled's existing frozen
+checkpoint is reused, not retrained). The `w` that maximises **mean
+validation accuracy across the 9 subjects** is then fixed, FBCSP is refit on
+the full T split (train+val, standard practice once a hyperparameter is
+chosen), and the ensemble is evaluated on E (test) **exactly once**.
+
+```
+Validation accuracy by weight (sessions 1-3 only, test set untouched):
+  w=0.3: 74.7%   w=0.4: 76.6%   w=0.5: 77.3% <-- chosen
+  w=0.6: 75.9%   w=0.7: 76.4%   w=0.8: 75.2%
+```
+
+| | Mean accuracy | Kappa | vs. FBCSP alone | vs. SpectNet alone |
+|---|---|---|---|---|
+| **Ensemble, w=0.5 (chosen on validation)** | **78.7% ± 12.8%** | **0.574** | **p=0.027** | **p=0.008** |
+
+**This is now the official result: 78.7% ± 12.8%, w=0.5, chosen honestly.**
+It happens to be almost identical to the old, improperly-selected 78.8%
+(w=0.6) - which is reassuring evidence that the ensemble's benefit is real
+and not an artifact of tuning against the test set, but the selection
+procedure above is the one that should be cited, not the sweep-on-test
+table. At this weight the ensemble still beats both individual methods
+significantly (FBCSP alone p=0.027, SpectNet alone p=0.008).
+
+**Caveat, documented not fixed**: SpectNet pooled's own checkpoint
+(`results/spectnet_all.pth`) was trained before this validation split
+existed, using the full T data with its own separate internal 15% val split
+for early stopping only - so it has technically already seen T-val trials
+during its own training. Retraining SpectNet with a clean 3-way split is out
+of scope here; this fix addresses specifically the ensemble-weight-selection
+leakage the advisor flagged, not a from-scratch re-run of the CNN itself.
 
 ### 4. Data augmentation on ShallowConvNet (`src/augmentation.py`, `src/experiment_augmentation.py`)
 
@@ -991,7 +1027,7 @@ single pooled model, no std to report.
 
 | Method | Exp | Accuracy | F1-score | Kappa |
 |---|---|---|---|---|
-| **Ensemble: FBCSP+LDA + SpectNet (w=0.6)** | **follow-up** | **78.8% ± 12.7%** | — | — |
+| **Ensemble: FBCSP+LDA + SpectNet (w=0.5, chosen on validation)** | **follow-up** | **78.7% ± 12.8%** | — | **0.574** |
 | FBCSP+LDA | 5a | 75.9% ± 13.4% | 75.5% ± 13.7% | 0.519 |
 | FBCSP+SVM | 5a | 73.6% ± 13.5% | 72.7% ± 14.5% | 0.472 |
 | Riem-TS+LDA | 5b | 72.9% ± 13.4% | 72.0% ± 13.9% | 0.459 |
@@ -1010,9 +1046,10 @@ single pooled model, no std to report.
 **Best single method: FBCSP+LDA at 75.9% mean accuracy (Kappa 0.519)**, still
 clearly ahead of every individual ERSP+CNN method even after the hop fix
 recovered some ground for SpectNet pooled (70.0%→71.7%). **Best result
-overall: the FBCSP+SpectNet ensemble at 78.8% ± 12.7%** (see "Follow-up
-Experiments" above) — the only method found in this project that
-significantly beats FBCSP alone (p=0.008). The epsilon fix (see "Second
+overall: the FBCSP+SpectNet ensemble at 78.7% ± 12.8%** (w=0.5, chosen on a
+validation split, not on test - see "Follow-up Experiments" above) — the
+only method found in this project that significantly beats FBCSP alone
+(p=0.027). The epsilon fix (see "Second
 Diagnostic Finding") is what cost the CNN methods their individual edge —
 before it, pooled SpectNet reached 74.5%, essentially tying FBCSP; the hop
 fix (see "Third Diagnostic Finding") partially recovered that gap, and
@@ -1093,9 +1130,11 @@ see "Follow-up Experiments".
     SpectNet (p=0.91). See "Follow-up Experiments" above.
 
 11. **Ensembling FBCSP+LDA with SpectNet pooled gives the best result in the
-    project: 78.8% ± 12.7%** (weighted average of predict_proba/softmax,
-    w=0.6 favouring FBCSP), significantly ahead of FBCSP alone (p=0.008) and
-    SpectNet alone (p=0.004). The two methods appear to make at least
+    project: 78.7% ± 12.8%** (weighted average of predict_proba/softmax,
+    w=0.5, chosen on a validation split carved out of sessions 1-3 - not by
+    sweeping against the test set, which was the original, flawed version
+    of this experiment), significantly ahead of FBCSP alone (p=0.027) and
+    SpectNet alone (p=0.008). The two methods appear to make at least
     partially independent errors — classical multi-band features and a
     full time-frequency CNN are complementary, not redundant, on this task.
 
