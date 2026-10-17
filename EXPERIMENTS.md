@@ -1060,6 +1060,63 @@ see "Follow-up Experiments".
 
 ---
 
+## Interpretability — Grad-CAM and Channel Saliency (`src/gradcam_spectnet.py`)
+
+Per advisor request: does SpectNet pooled actually look at the mu/beta
+contralateral region the ERD/ERS characterization (`erd_characterization.py`)
+found to be statistically significant, or is it picking up on something
+else? Two complementary attribution methods, computed only on
+correctly-classified evaluation-session trials, pooled across all 9
+subjects (992 Left, 1044 Right trials):
+
+**1. Grad-CAM** (Selvaraju et al., 2017) at the last convolutional layer
+(`conv2`, post-ReLU, pre-`pool2`, native resolution 21x29, upsampled to the
+full 22x128 image). This answers "where in time-frequency" the decision
+comes from, but SpectNet mixes all 3 input channels together starting at
+`conv1`, so this map cannot be attributed back to a single channel.
+
+`results/figures/gradcam/gradcam_left.png`, `gradcam_right.png`
+
+**Result: strong agreement with the statistical ERD/ERS finding.** For both
+classes, Grad-CAM concentrates almost entirely in the mu band (8-13Hz),
+starting shortly after the cue (t≈0.3-0.5s) and persisting through the
+trial - the same time-frequency region `erd_characterization.py` found
+significant via cluster-based permutation testing (p=0.0039 for the
+C3-Right/C4-Left contralateral pairs). The model is not attending to beta
+band or to the pre-cue baseline.
+
+**2. Input-gradient saliency**, `|d(class score)/d(input)|`, computed
+directly on the 3-channel input (no upsampling needed - same resolution as
+the input, 22x128, per channel).
+
+`results/figures/gradcam/saliency_left.png`, `saliency_right.png`
+
+**Result: no clear per-channel lateralization.** C3, Cz and C4 show nearly
+identical saliency patterns for both Left and Right trials - the same
+mu-band, post-cue region lights up on all three channels roughly equally,
+regardless of class. This is the honest result, not the expected one: if
+the model were cleanly exploiting contralaterality the way the ERD
+characterization shows it exists in the data, C3 saliency should visibly
+exceed C4 for Right trials (and vice versa for Left) - it does not.
+
+### Interpretation
+
+This is a genuine, if unflattering, finding: the model has learned *that*
+the mu band post-cue is where the discriminative signal lives (matching the
+neuroscience), but the simple per-channel gradient magnitude does not show
+*how* it uses the three channels differently to resolve Left vs. Right -
+plausibly because what actually separates the classes is the **relative**
+difference between C3 and C4 (which `conv1`, mixing all 3 channels
+immediately, may fold together in a way plain gradient magnitude per input
+channel cannot cleanly disentangle), not the absolute magnitude in either
+channel alone. This is a concrete, data-grounded argument for the advisor's
+next suggestion - adding an explicit **C3−C4** difference channel - since an
+explicit differential input would hand the model (and this saliency method)
+the exact contrast that contralaterality predicts, instead of requiring it
+to be reconstructed implicitly across two separately-convolved channels.
+
+---
+
 ## Key Findings
 
 1. **Evaluation labels were broken (critical bug):** The GDF evaluation files contain
