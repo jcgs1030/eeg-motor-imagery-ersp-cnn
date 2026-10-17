@@ -1156,6 +1156,75 @@ useful signal in C4 directly than in the engineered C3−C4 feature.
 
 ---
 
+## AST (Audio Spectrogram Transformer) Fine-Tuning (`src/experiment_ast.py`)
+
+Per advisor request: fine-tune AST (Gong et al. 2021,
+`MIT/ast-finetuned-audioset-10-10-0.4593`, 86M params, pretrained on
+AudioSet) on our ERSP images, compared against SpectNet and FBCSP+LDA using
+the same split.
+
+**Adaptation, forced by being CPU-only in this environment**: benchmarked
+AST's native resolution (128 mel bins x 1024 frames) at ~2s/sample forward
+alone, CPU-bound regardless of batch size - intractable for fine-tuning at
+this project's scale. Two changes made it feasible (~130-220ms/sample, a
+~10-15x speedup):
+1. The 3 EEG channels (C3, Cz, C4) are stacked along the frequency axis
+   into one single-channel "image" (one AST forward pass per trial instead
+   of three).
+2. A smaller patch grid (`patch_size=8`, stride=8, vs. native
+   `patch_size=16`, stride=10) keeps the number of patches - and therefore
+   quadratic attention cost - tractable (130 patches vs. ~1200). This means
+   the patch-embedding convolution and position embeddings cannot be loaded
+   from the pretrained checkpoint (size mismatch, reinitialised); the 12
+   pretrained transformer encoder blocks (the bulk of the parameters) still
+   load normally.
+
+Conservative fine-tuning: embeddings (necessarily, reinitialised), the last
+2 transformer blocks, and a new linear head are trained (14.3M of 85.2M
+parameters); the other 10 blocks stay frozen.
+
+**Scope, due to the same CPU cost**: trained and evaluated on a 4-subject
+subset (S01, S03, S04, S06 - a deliberate mix of weak/average/strong
+signal, not cherry-picked for a favourable result), not all 9. SpectNet and
+FBCSP+LDA numbers below are those same 4 subjects' existing per-subject
+test accuracy, for a fair comparison at this smaller scale. One run (10
+epochs, pooled over the 4 subjects, 1620 training trials) took ~92 minutes
+wall-clock on CPU.
+
+| | Mean accuracy (4 subjects) | Kappa |
+|---|---|---|
+| AST (fine-tuned) | 65.4% ± 9.5% | 0.309 |
+| SpectNet (pooled) | 72.3% ± 12.6% | — |
+| FBCSP+LDA | 73.7% ± 14.8% | — |
+
+**Result: AST underperforms both existing methods by 7-8pp on this
+subset**, n=4 too small for a formal significance test. Per-subject, AST is
+below both comparison methods on every one of the 4 subjects (S01: 64.1%
+vs. 69.7%/67.2%; S03: 52.2% vs. 54.1%/55.0%; S04: 79.1% vs. 89.1%/95.3%;
+S06: 66.5% vs. 76.5%/77.4%).
+
+### Interpretation
+
+Not a fair fight against a from-scratch-designed small CNN like SpectNet
+(66K params) or a classical method tuned specifically for this exact
+problem: AST's patch embedding and position embeddings - arguably the part
+of the architecture most responsible for learning *where* in a spectrogram
+to look - start from scratch here, because our spectrograms are far smaller
+than what AST was pretrained on, and only the deepest, most task-specific
+pretrained knowledge (general audio transformer blocks) transfers at all.
+With 85M parameters, mostly frozen, and only ~1.4k pooled training trials,
+there is a real risk the trainable 14.3M-parameter portion simply does not
+have enough signal to learn a good classifier from scratch on this task,
+while a 66K-parameter SpectNet trained end-to-end on the same data does.
+This is a genuine negative result for this specific adaptation, not
+necessarily evidence against transformers for EEG in general - a GPU
+environment permitting the native 128x1024 resolution (position embeddings
+transfer cleanly, only the classifier head needs training) would be a
+fairer test of AST's actual pretrained audio representations, which this
+CPU-constrained setup could not run.
+
+---
+
 ## Key Findings
 
 1. **Evaluation labels were broken (critical bug):** The GDF evaluation files contain
