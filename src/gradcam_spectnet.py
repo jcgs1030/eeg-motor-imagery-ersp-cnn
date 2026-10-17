@@ -98,17 +98,18 @@ class SpectNetGradCAM:
         return cam
 
     def channel_saliency(self, x: torch.Tensor, target_class: int) -> np.ndarray:
-        """x: (1, C, F, T). Returns |d(score)/d(input)|, shape (C, F, T),
-        each channel independently normalised to [0, 1] for display."""
+        """x: (1, C, F, T). Returns RAW |d(score)/d(input)|, shape (C, F, T) -
+        NOT normalised per channel. Per-channel normalisation would rescale
+        every channel to its own max and make it impossible to see whether
+        one channel is actually more important than another - exactly the
+        comparison this method exists to make. Normalise once, globally
+        across channels, only at plot time."""
         x = x.clone().requires_grad_(True)
         self.model.zero_grad()
         logits = self.model(x)
         score = logits[0, target_class]
         score.backward()
-        sal = x.grad[0].abs().numpy()  # (C, F, T)
-        for c in range(sal.shape[0]):
-            sal[c] = sal[c] / (sal[c].max() + 1e-8)
-        return sal
+        return x.grad[0].abs().numpy()  # (C, F, T), raw scale
 
 
 # ── Data ──────────────────────────────────────────────────────────────────
@@ -156,12 +157,13 @@ def plot_gradcam(cam_mean: np.ndarray, cls_label: str, n_trials: int, out_path: 
 def plot_channel_saliency(sal_mean: np.ndarray, cls_label: str, n_trials: int, out_path: Path):
     times = np.linspace(ANALYSIS_TMIN, ANALYSIS_TMAX, IMG_TIME_BINS)
     freqs = np.linspace(ERSP_FMIN, ERSP_FMAX, IMG_FREQ_BINS)
+    vmax = sal_mean.max()  # SAME scale for every channel - see channel_saliency() docstring
 
     fig, axes = plt.subplots(1, N_CHANNELS, figsize=(5 * N_CHANNELS, 4.2))
     for ch_i, ch_name in enumerate(CHANNELS[:N_CHANNELS]):
         ax = axes[ch_i]
         im = ax.imshow(
-            sal_mean[ch_i], aspect="auto", origin="lower", cmap="jet", vmin=0, vmax=1,
+            sal_mean[ch_i], aspect="auto", origin="lower", cmap="jet", vmin=0, vmax=vmax,
             extent=[times[0], times[-1], freqs[0], freqs[-1]]
         )
         ax.axvline(0, color="white", linewidth=1.0, linestyle="--")

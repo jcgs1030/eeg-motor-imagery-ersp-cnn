@@ -1091,29 +1091,68 @@ the input, 22x128, per channel).
 
 `results/figures/gradcam/saliency_left.png`, `saliency_right.png`
 
-**Result: no clear per-channel lateralization.** C3, Cz and C4 show nearly
-identical saliency patterns for both Left and Right trials - the same
-mu-band, post-cue region lights up on all three channels roughly equally,
-regardless of class. This is the honest result, not the expected one: if
-the model were cleanly exploiting contralaterality the way the ERD
-characterization shows it exists in the data, C3 saliency should visibly
-exceed C4 for Right trials (and vice versa for Left) - it does not.
+**Methodological correction (caught before documenting conclusions from
+it):** the first version of `channel_saliency()` normalised each channel
+independently to its own [0,1] max before plotting. That makes every
+channel's peak look identical BY CONSTRUCTION, regardless of its true
+relative importance - it is impossible to see whether one channel matters
+more than another under per-channel normalisation, which is exactly the
+question this method exists to answer. Fixed by returning the raw,
+unnormalised gradient magnitude and applying a single shared colour scale
+(one `vmax`, computed once across all channels) at plot time instead.
+
+**Result, corrected: C4 has the highest saliency for BOTH classes**, not a
+clean contralateral C3↔C4 switch. The mu-band, post-cue region is where all
+three channels peak (consistent with the Grad-CAM result above), but C4's
+peak is visibly and consistently larger than C3's or Cz's, whether the
+trial is Left or Right. This is still an honest, non-trivial result - not
+the "no lateralization at all" claim from the uncorrected plots, but also
+not the clean contralateral symmetry (C3 dominant for Right, C4 dominant
+for Left) that the ERD characterization's own statistics would predict.
 
 ### Interpretation
 
-This is a genuine, if unflattering, finding: the model has learned *that*
-the mu band post-cue is where the discriminative signal lives (matching the
-neuroscience), but the simple per-channel gradient magnitude does not show
-*how* it uses the three channels differently to resolve Left vs. Right -
-plausibly because what actually separates the classes is the **relative**
-difference between C3 and C4 (which `conv1`, mixing all 3 channels
-immediately, may fold together in a way plain gradient magnitude per input
-channel cannot cleanly disentangle), not the absolute magnitude in either
-channel alone. This is a concrete, data-grounded argument for the advisor's
-next suggestion - adding an explicit **C3−C4** difference channel - since an
-explicit differential input would hand the model (and this saliency method)
-the exact contrast that contralaterality predicts, instead of requiring it
-to be reconstructed implicitly across two separately-convolved channels.
+The model relies more heavily on C4 in general - plausibly because, across
+9 pooled subjects with very different signal quality (S02/S03 near chance,
+S04 >90%, see "Why doesn't the grand-average look better" discussion), C4
+happens to carry a cleaner, more consistently informative signal on
+average, so gradient-based importance concentrates there regardless of
+class, and the Left/Right distinction is read off the pattern *within* that
+channel rather than by switching which channel dominates. This does not
+contradict the ERD/ERS characterization (which is about where a real
+physiological effect exists in the data, aggregated fairly per subject) -
+it is a separate statement about which channel a specific trained pooled
+model's decision boundary happens to weight most heavily, which can differ
+from the "textbook" physiological picture for reasons including per-subject
+signal quality, electrode impedance/noise differences, and how `conv1`
+mixes channels from the very first layer.
+
+## C3−C4 Explicit Difference Channel (`src/experiment_c3c4_channel.py`)
+
+Motivated directly by the finding above: does giving the model an explicit
+C3−C4 difference channel (computed on the raw signal before the ERSP
+transform, then run through `compute_ersp_image()` like any other channel)
+change classification accuracy or saliency? Exploratory - trains a SEPARATE
+4-channel SpectNet pooled model (`results/spectnet_c3c4_all.pth`), does not
+touch the production 3-channel checkpoint or pipeline.
+
+| | Mean accuracy |
+|---|---|
+| SpectNet pooled, 3-channel (C3, Cz, C4) | 71.5% ± 10.2% |
+| SpectNet pooled, 4-channel (C3, Cz, C4, C3−C4) | 72.2% ± 10.6% |
+| Difference | +0.7pp |
+
+`results/figures/c3c4_channel/saliency_4ch_left.png`,
+`saliency_4ch_right.png`
+
+A small, directionally positive accuracy change - not a breakthrough. The
+per-channel saliency (same corrected, globally-normalised method as above)
+shows the new C3−C4 channel picks up a moderate signal in the same mu-band
+region, but **does not displace C4 as the most salient channel** - C4
+remains the strongest for both classes even with the explicit difference
+channel available. The model did not restructure its reliance on C4 just
+because an explicit contrast channel was offered to it; it still finds more
+useful signal in C4 directly than in the engineered C3−C4 feature.
 
 ---
 
