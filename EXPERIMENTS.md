@@ -487,6 +487,44 @@ the population level (9 subjects). This is purely a rendering change -
 colormap choice does not alter the underlying ERSP values, only how
 perceptible a given magnitude of difference is to the human eye.
 
+## Fifth Diagnostic Finding — dB Baseline Bias from Per-Trial Averaging (confirmed, not fixed in this pipeline)
+
+### Observation
+
+The pre-cue baseline window (t<0) in every `ersp.py`-generated figure should
+average to ~0 dB by construction (ERSP is defined relative to its own
+baseline), but measures as a small, consistent negative offset instead.
+Measured directly across all 6519 trials (9 subjects, both sessions):
+
+```
+mean dB in the pre-cue window, pipeline as committed: -1.14 dB (all three channels)
+```
+
+### Root cause
+
+`plot_ersp_average` / `plot_ersp_grand_average` (and the underlying stored
+`*-ersp.npz` tensors) average **per-trial dB values** across trials:
+`mean_trials(10*log10(P_trial / baseline_trial))`. Because `log` is concave,
+Jensen's inequality guarantees `mean(log(x)) <= log(mean(x))` whenever `x`
+has any trial-to-trial variance - so this average is biased negative
+relative to the alternative definition, `10*log10(mean_trials(P) /
+mean_trials(baseline))`, which is exactly 0 dB at baseline by construction.
+
+### Status
+
+Independently confirmed fixed in `src/erd_characterization.py`
+(`compute_tfr(..., average=True)` averages power before the log - see that
+module's docstring and the accompanying study notes). Measured on the same
+check there: **+0.05 dB** at baseline (S04, right hand), i.e. the bias is
+gone.
+
+**Not fixed in `ersp.py`** or the committed `*-ersp.npz` tensors: doing so
+would change the CNN input representation and require reprocessing +
+retraining Experiments 1-2 again, which is out of scope while the
+classification pipeline is paused (see advisor feedback, 2026-10-12). Left
+as a documented, quantified, known limitation of the frozen classification
+pipeline.
+
 ---
 
 ## Follow-up Experiments — Statistical Validation, Ensembling, Improvement Attempts
@@ -608,9 +646,9 @@ checkpoint on the full 9-subject pooled training set again at a lower
 learning rate (3e-5), early stopping as before. Produces one model (answers
 "fine-tuning sobre el promedio/pooled en vez de por sujeto").
 
-| | Mean accuracy | vs. pooled baseline (71.7%) |
+| | Mean accuracy | vs. pooled baseline (71.5%) |
 |---|---|---|
-| Pooled baseline (no fine-tuning) | 71.7% | — |
+| Pooled baseline (no fine-tuning) | 71.5% | — |
 | Per-subject fine-tuning | 71.6% | +0.0pp, Wilcoxon p=0.984 |
 | Global continuation | 71.5% | -0.1pp, Wilcoxon p=0.488 |
 
