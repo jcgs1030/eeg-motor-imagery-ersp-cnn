@@ -24,7 +24,7 @@ from scipy.signal import stft
 sys.path.insert(0, str(Path(__file__).parent))
 from config import (
     DATA_PROC, FIGURES_DIR, SUBJECTS, CHANNELS, N_CHANNELS, SFREQ,
-    EPOCH_TMIN, EPOCH_TMAX,
+    EPOCH_TMIN, EPOCH_TMAX, BASELINE, ANALYSIS_TMIN, ANALYSIS_TMAX,
     STFT_WIN_LEN, STFT_HOP,
     ERSP_FMIN, ERSP_FMAX,
     IMG_FREQ_BINS, IMG_TIME_BINS, IMG_SIZE,
@@ -33,11 +33,21 @@ from config import (
 
 mne.set_log_level("WARNING")
 
+# All ERSP plots show REAL signed dB (matches the clip baked into
+# compute_ersp_image's [0,1] normalisation below), not the raw [0,1] scale -
+# the advisor asked for a dB colour bar matching the classic EEGLAB
+# convention (see EXPERIMENTS.md "Fourth Diagnostic Finding").
+DB_CLIP = 6.0
+
+
+def _to_db(norm: np.ndarray) -> np.ndarray:
+    """Undo compute_ersp_image's [0,1] normalisation -> real signed dB."""
+    return norm * (2.0 * DB_CLIP) - DB_CLIP
+
 
 # ── Core ERSP ────────────────────────────────────────────────────────────────
 
 def compute_ersp_image(epoch_data: np.ndarray,
-                       baseline_data: np.ndarray,
                        sfreq: float = SFREQ) -> np.ndarray:
     """
     Compute the ERSP image for a single trial.
@@ -46,15 +56,23 @@ def compute_ersp_image(epoch_data: np.ndarray,
 
     Parameters
     ----------
-    epoch_data    : array (n_samples,) — full trial signal (baseline + MI)
-    baseline_data : array (n_samples,) — pre-stimulus baseline window only
-    sfreq         : sampling frequency
+    epoch_data : array (n_samples,) — full extracted trial signal, spanning
+                 EPOCH_TMIN..EPOCH_TMAX relative to cue onset (EPOCH_TMIN
+                 reaches back to the trial start / full pre-cue fixation, NOT
+                 just the analysis window — this gives the BASELINE reference
+                 window a buffer against the STFT's own zero-padding edge; see
+                 EXPERIMENTS.md "Diagnostic Finding — Baseline Window
+                 Contamination" for why the previous 0.5s baseline window was
+                 biased and how this was verified).
+    sfreq      : sampling frequency
 
     Returns
     -------
-    ersp_img : array (IMG_FREQ_BINS, IMG_TIME_BINS) — normalised ERSP image [0, 1]
+    ersp_img : array (IMG_FREQ_BINS, IMG_TIME_BINS) — normalised ERSP image
+               [0, 1], covering ANALYSIS_TMIN..ANALYSIS_TMAX (the same output
+               window as before this fix — only the baseline measurement changed).
     """
-    # ── STFT of the full trial ──
+    # ── STFT of the full extracted trial (includes the pre-cue fixation buffer) ──
     freqs, times_stft, Zxx = stft(
         epoch_data,
         fs=sfreq,
@@ -64,22 +82,37 @@ def compute_ersp_image(epoch_data: np.ndarray,
         padded=True
     )
     power = np.abs(Zxx) ** 2  # (n_freqs_stft, n_times_stft)
+    t_abs = times_stft + EPOCH_TMIN  # seconds relative to cue onset
 
-    # ── Baseline mean from STFT time bins within the pre-stimulus window ──
-    # baseline_data length / sfreq gives the baseline duration in seconds;
-    # times_stft are seconds from signal start so we select bins up to that point.
-    bl_duration = len(baseline_data) / sfreq
-    bl_mask = times_stft <= bl_duration
+    # ── Baseline reference: mean power over STFT frames inside BASELINE ──
+    # BASELINE sits well inside the extracted trial (2s of buffer before it,
+    # since EPOCH_TMIN reaches back to the trial start), so these frames are
+    # not tainted by the STFT's zero-padding taper at the true signal edge.
+    bl_mask = (t_abs >= BASELINE[0]) & (t_abs <= BASELINE[1])
     if bl_mask.sum() == 0:
         bl_mask[0] = True  # fallback: use first frame
-    baseline_mean = power[:, bl_mask].mean(axis=-1, keepdims=True) + 1e-12
+
+    # A fixed epsilon like 1e-12 is NOT negligible here: MNE stores EEG in
+    # volts, so squared STFT power sits in the ~1e-12..1e-27 range (verified
+    # empirically) - a 1e-12 absolute epsilon was comparable to or larger
+    # than the real baseline power for most trials, silently inflating the
+    # denominator and biasing every ERSP value strongly negative (median was
+    # -12..-13 dB instead of the expected -1..-3 dB range from the ERD/ERS
+    # literature; see EXPERIMENTS.md "Diagnostic Finding"). Scale epsilon to
+    # this trial's own power range instead, so it only guards against log(0).
+    eps = power.max() * 1e-12
+    baseline_mean = power[:, bl_mask].mean(axis=-1, keepdims=True) + eps
 
     # ── Divisive ERSP (in dB) ──
-    ersp = 10 * np.log10(power / baseline_mean + 1e-12)
+    ersp = 10 * np.log10(power / baseline_mean + eps)
+
+    # ── Crop to the analysis/output window (unchanged from before the fix) ──
+    analysis_mask = (t_abs >= ANALYSIS_TMIN) & (t_abs <= ANALYSIS_TMAX)
+    ersp_analysis = ersp[:, analysis_mask]
 
     # ── Select frequency range of interest ──
     freq_mask = (freqs >= ERSP_FMIN) & (freqs <= ERSP_FMAX)
-    ersp_roi = ersp[freq_mask, :]    # (n_freq_roi, n_times_stft)
+    ersp_roi = ersp_analysis[freq_mask, :]    # (n_freq_roi, n_times_roi)
 
     # ── Resize to IMG_SIZE with interpolation ──
     ersp_resized = _resize_2d(ersp_roi, IMG_FREQ_BINS, IMG_TIME_BINS)
@@ -98,7 +131,6 @@ def compute_ersp_image(epoch_data: np.ndarray,
 
 
 def compute_ersp_image_wavelet(epoch_data: np.ndarray,
-                               baseline_data: np.ndarray,
                                sfreq: float = SFREQ,
                                n_cycles: float = 6.0) -> np.ndarray:
     """
@@ -136,12 +168,20 @@ def compute_ersp_image_wavelet(epoch_data: np.ndarray,
         conv = fftconvolve(epoch_data, wavelet, mode="same")
         power[fi, :] = np.abs(conv) ** 2
 
-    bl_end = len(baseline_data)
-    baseline_mean = power[:, :bl_end].mean(axis=-1, keepdims=True) + 1e-12
-    ersp = 10 * np.log10(power / baseline_mean + 1e-12)
+    t_abs = np.arange(n_samples) / sfreq + EPOCH_TMIN  # seconds relative to cue onset
 
-    times_full = np.arange(n_samples) / sfreq  # 0..duration, seconds from trial start
-    ersp_resized = _resize_2d(ersp, IMG_FREQ_BINS, IMG_TIME_BINS)
+    bl_mask = (t_abs >= BASELINE[0]) & (t_abs <= BASELINE[1])
+    if bl_mask.sum() == 0:
+        bl_mask[0] = True
+    # See compute_ersp_image() for why a relative epsilon is required here
+    # (a fixed 1e-12 is not negligible against volts^2-scale EEG power).
+    eps = power.max() * 1e-12
+    baseline_mean = power[:, bl_mask].mean(axis=-1, keepdims=True) + eps
+    ersp = 10 * np.log10(power / baseline_mean + eps)
+
+    analysis_mask = (t_abs >= ANALYSIS_TMIN) & (t_abs <= ANALYSIS_TMAX)
+    ersp_analysis = ersp[:, analysis_mask]
+    ersp_resized = _resize_2d(ersp_analysis, IMG_FREQ_BINS, IMG_TIME_BINS)
 
     DB_CLIP = 6.0
     ersp_clipped = np.clip(ersp_resized, -DB_CLIP, DB_CLIP)
@@ -169,7 +209,6 @@ def plot_ersp_grand_average_wavelet(subjects: list = None, suffix: str = "both",
                     1: np.zeros((N_CHANNELS, IMG_FREQ_BINS, IMG_TIME_BINS))}
     n_trials_pooled = {0: 0, 1: 0}
     n_subjects_used = 0
-    bl_end = int(abs(EPOCH_TMIN) * SFREQ)
 
     for subj in subjects:
         loaded_any = False
@@ -186,8 +225,7 @@ def plot_ersp_grand_average_wavelet(subjects: list = None, suffix: str = "both",
                 for trial_idx in range(ep_data.shape[0]):
                     for ch_idx in range(ep_data.shape[1]):
                         signal = ep_data[trial_idx, ch_idx, :]
-                        baseline = signal[:bl_end]
-                        img = compute_ersp_image_wavelet(signal, baseline, sfreq=SFREQ)
+                        img = compute_ersp_image_wavelet(signal, sfreq=SFREQ)
                         sum_by_class[cls_label][ch_idx] += img
                     n_trials_pooled[cls_label] += 1
             loaded_any = True
@@ -208,11 +246,11 @@ def plot_ersp_grand_average_wavelet(subjects: list = None, suffix: str = "both",
     for ch_i, ch_name in enumerate(CHANNELS[:N_CHANNELS]):
         for cls_i, (cls_label, cls_name) in enumerate([(0, "Left"), (1, "Right")]):
             ax = axes[ch_i, cls_i]
-            grand_avg = sum_by_class[cls_label][ch_i] / n_trials_pooled[cls_label]
+            grand_avg = _to_db(sum_by_class[cls_label][ch_i] / n_trials_pooled[cls_label])
             im = ax.imshow(
                 grand_avg, aspect="auto", origin="lower",
-                cmap="RdYlBu_r", vmin=0, vmax=1,
-                extent=[EPOCH_TMIN, EPOCH_TMAX, ERSP_FMIN, ERSP_FMAX]
+                cmap="jet", vmin=-DB_CLIP, vmax=DB_CLIP,
+                extent=[ANALYSIS_TMIN, ANALYSIS_TMAX, ERSP_FMIN, ERSP_FMAX]
             )
             ax.axvline(0, color="white", linewidth=1.0, linestyle="--")
             ax.axhspan(8, 13, alpha=0.15, color="cyan")    # mu band
@@ -222,7 +260,7 @@ def plot_ersp_grand_average_wavelet(subjects: list = None, suffix: str = "both",
             ax.set_xlabel("Time (s)", fontsize=8)
             ax.tick_params(labelsize=7)
             plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04,
-                         label="Norm. ERSP").ax.tick_params(labelsize=6)
+                         label="ERSP (dB)").ax.tick_params(labelsize=6)
 
     plt.tight_layout()
 
@@ -260,19 +298,17 @@ def plot_stft_vs_wavelet(subject: int, suffix: str = TRAIN_SUFFIX,
         trial_idx = 0
 
     signal = ep_data[trial_idx, ch_idx, :]
-    bl_end = int(abs(EPOCH_TMIN) * SFREQ)
-    baseline = signal[:bl_end]
 
-    img_stft = compute_ersp_image(signal, baseline, sfreq=SFREQ)
-    img_wav  = compute_ersp_image_wavelet(signal, baseline, sfreq=SFREQ)
+    img_stft = _to_db(compute_ersp_image(signal, sfreq=SFREQ))
+    img_wav  = _to_db(compute_ersp_image_wavelet(signal, sfreq=SFREQ))
 
     fig, axes = plt.subplots(1, 2, figsize=(11, 4.2))
     for ax, img, title in [(axes[0], img_stft, "STFT (Hann, 256-sample window)"),
                            (axes[1], img_wav,  "Morlet CWT (6 cycles)")]:
         im = ax.imshow(
-            img, aspect="auto", origin="lower", cmap="RdYlBu_r",
-            vmin=0, vmax=1,
-            extent=[EPOCH_TMIN, EPOCH_TMAX, ERSP_FMIN, ERSP_FMAX]
+            img, aspect="auto", origin="lower", cmap="jet",
+            vmin=-DB_CLIP, vmax=DB_CLIP,
+            extent=[ANALYSIS_TMIN, ANALYSIS_TMAX, ERSP_FMIN, ERSP_FMAX]
         )
         ax.axvline(0, color="white", linewidth=1.0, linestyle="--")
         ax.axhspan(8, 13, alpha=0.15, color="cyan")
@@ -280,7 +316,7 @@ def plot_stft_vs_wavelet(subject: int, suffix: str = TRAIN_SUFFIX,
         ax.set_title(title, fontsize=10)
         ax.set_xlabel("Time (s)")
         ax.set_ylabel("Frequency (Hz)")
-        plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04, label="Norm. ERSP")
+        plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04, label="ERSP (dB)")
 
     fig.suptitle(
         f"{tag} | {channel} | {cls_name.capitalize()} imagery | trial {trial_idx}\n"
@@ -333,10 +369,6 @@ def generate_ersp_for_subject(subject: int, suffix: str,
     print(f"\n  Generating ERSP for {tag}...")
     epochs = mne.read_epochs(str(epo_path), verbose=False)
 
-    # Time indices for baseline and imagery window
-    bl_start = 0
-    bl_end   = int(abs(EPOCH_TMIN) * SFREQ)  # up to t=0
-
     X_list, y_list = [], []
 
     for cls_name, cls_label in [("left", 0), ("right", 1)]:
@@ -350,9 +382,8 @@ def generate_ersp_for_subject(subject: int, suffix: str,
 
             for ch_idx in range(ep_data.shape[1]):
                 signal = ep_data[trial_idx, ch_idx, :]
-                baseline = signal[:bl_end]
 
-                ersp_img = compute_ersp_image(signal, baseline, sfreq=SFREQ)
+                ersp_img = compute_ersp_image(signal, sfreq=SFREQ)
 
                 if ersp_img.shape != IMG_SIZE:
                     valid = False
@@ -426,11 +457,11 @@ def plot_ersp_examples(subject: int, suffix: str = TRAIN_SUFFIX,
         for ch_i, ch_name in enumerate(CHANNELS[:N_CHANNELS]):
             for col, trial_idx in enumerate(indices):
                 ax = axes[row, col] if n_cols > 1 else axes[row]
-                img = X[trial_idx, ch_i, :, :]  # (F, T)
+                img = _to_db(X[trial_idx, ch_i, :, :])  # (F, T), real dB
                 im = ax.imshow(
                     img, aspect="auto", origin="lower",
-                    cmap="RdYlBu_r",
-                    extent=[EPOCH_TMIN, EPOCH_TMAX, ERSP_FMIN, ERSP_FMAX]
+                    cmap="jet", vmin=-DB_CLIP, vmax=DB_CLIP,
+                    extent=[ANALYSIS_TMIN, ANALYSIS_TMAX, ERSP_FMIN, ERSP_FMAX]
                 )
                 if col == 0:
                     ax.set_ylabel(f"{cls_name}\n{ch_name}\nFrequency (Hz)",
@@ -439,7 +470,8 @@ def plot_ersp_examples(subject: int, suffix: str = TRAIN_SUFFIX,
                     ax.set_xlabel("Time (s)", fontsize=8)
                 ax.axvline(0, color="white", linewidth=0.8, linestyle="--")
                 ax.tick_params(labelsize=7)
-                plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04).ax.tick_params(labelsize=6)
+                plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04,
+                             label="ERSP (dB)").ax.tick_params(labelsize=6)
             row += 1
 
     plt.tight_layout()
@@ -483,11 +515,11 @@ def plot_ersp_average(subject: int, suffix: str = TRAIN_SUFFIX,
             if mask.sum() == 0:
                 ax.set_visible(False)
                 continue
-            avg_ersp = X[mask, ch_i, :, :].mean(axis=0)
+            avg_ersp = _to_db(X[mask, ch_i, :, :].mean(axis=0))
             im = ax.imshow(
                 avg_ersp, aspect="auto", origin="lower",
-                cmap="RdYlBu_r", vmin=0, vmax=1,
-                extent=[EPOCH_TMIN, EPOCH_TMAX, ERSP_FMIN, ERSP_FMAX]
+                cmap="jet", vmin=-DB_CLIP, vmax=DB_CLIP,
+                extent=[ANALYSIS_TMIN, ANALYSIS_TMAX, ERSP_FMIN, ERSP_FMAX]
             )
             ax.axvline(0, color="white", linewidth=1.0, linestyle="--")
             ax.axhspan(8, 13, alpha=0.15, color="cyan")    # mu band
@@ -497,7 +529,7 @@ def plot_ersp_average(subject: int, suffix: str = TRAIN_SUFFIX,
             ax.set_xlabel("Time (s)", fontsize=8)
             ax.tick_params(labelsize=7)
             plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04,
-                         label="Norm. ERSP").ax.tick_params(labelsize=6)
+                         label="ERSP (dB)").ax.tick_params(labelsize=6)
 
     plt.tight_layout()
 
@@ -561,11 +593,11 @@ def plot_ersp_grand_average(subjects: list = None, suffix: str = "both",
         for cls_i, (cls_label, cls_name) in enumerate([(0, "Left"), (1, "Right")]):
             ax = axes[ch_i, cls_i]
             stacked = np.concatenate(X_by_class[cls_label][ch_i], axis=0)
-            grand_avg = stacked.mean(axis=0)
+            grand_avg = _to_db(stacked.mean(axis=0))
             im = ax.imshow(
                 grand_avg, aspect="auto", origin="lower",
-                cmap="RdYlBu_r", vmin=0, vmax=1,
-                extent=[EPOCH_TMIN, EPOCH_TMAX, ERSP_FMIN, ERSP_FMAX]
+                cmap="jet", vmin=-DB_CLIP, vmax=DB_CLIP,
+                extent=[ANALYSIS_TMIN, ANALYSIS_TMAX, ERSP_FMIN, ERSP_FMAX]
             )
             ax.axvline(0, color="white", linewidth=1.0, linestyle="--")
             ax.axhspan(8, 13, alpha=0.15, color="cyan")    # mu band
@@ -575,7 +607,7 @@ def plot_ersp_grand_average(subjects: list = None, suffix: str = "both",
             ax.set_xlabel("Time (s)", fontsize=8)
             ax.tick_params(labelsize=7)
             plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04,
-                         label="Norm. ERSP").ax.tick_params(labelsize=6)
+                         label="ERSP (dB)").ax.tick_params(labelsize=6)
 
     plt.tight_layout()
 

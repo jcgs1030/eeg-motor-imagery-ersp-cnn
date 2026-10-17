@@ -202,17 +202,29 @@ Full experimental narrative and per-experiment analysis in [`EXPERIMENTS.md`](EX
 
 | Model | Test Accuracy |
 |---|---|
-| EEGNet | 73.5% |
-| ShallowConvNet | 70.6% |
-| SpectNet | 72.4% |
+| EEGNet | 70.0% |
+| ShallowConvNet | 60.3% |
+| **SpectNet** | **71.7%** |
+
+Three independent ERSP bugs were found and fixed here (see "Known
+Methodological Findings" below): a too-short baseline window, a numerical
+epsilon comparable in scale to the EEG power itself, and an STFT hop so
+large that 110 of the 128 output time-bins were pure interpolation. Before
+any fix, all three pooled models scored ~48–50% (chance). The baseline-window
+fix alone pushed them to 70.7–74.5%; the epsilon fix then cost a few points
+back and collapsed ShallowConvNet specifically to near-chance; the hop fix
+partially recovered ground for SpectNet (70.0%→71.7%, its best result) while
+leaving ShallowConvNet's collapse unchanged. See
+[`EXPERIMENTS.md`](EXPERIMENTS.md#experiment-1--cnn-subject-pooled) for the
+full four-stage before/after table.
 
 ### Experiment 2 — CNN Subject-Specific
 
 | Model | Accuracy | F1-score | Kappa |
 |---|---|---|---|
-| EEGNet | 72.6% ± 15.6% | 68.5% ± 21.9% | 0.451 |
-| ShallowConvNet | 70.2% ± 14.3% | 70.1% ± 14.3% | 0.404 |
-| SpectNet | 73.3% ± 14.8% | 70.8% ± 18.9% | 0.465 |
+| EEGNet | 69.0% ± 11.6% | 68.5% ± 12.0% | 0.379 |
+| ShallowConvNet | 54.5% ± 6.9% | 52.6% ± 8.6% | 0.090 |
+| SpectNet | 70.8% ± 13.1% | 68.7% ± 17.0% | 0.416 |
 
 ### Experiment 3 — CSP Baselines
 
@@ -244,35 +256,84 @@ Full experimental narrative and per-experiment analysis in [`EXPERIMENTS.md`](EX
 
 ### Key Finding
 
-**Best method: FBCSP+LDA at 75.9%** — consistent with the BCI-IV-2b literature for
-3-channel classifiers. High inter-subject variance (±13–16%) reflects genuine
-differences in individual EEG motor imagery responses (S04 > 92%, S03 ~55%).
+**Best result: an FBCSP+LDA / SpectNet ensemble at 78.8% ± 12.7%** — a
+weighted average of FBCSP's predict_proba and SpectNet pooled's softmax
+output, significantly ahead of either method alone (paired Wilcoxon,
+p=0.008 and p=0.004 respectively; n=9 subjects). **Best single method:
+FBCSP+LDA at 75.9%**, consistent with the BCI-IV-2b literature for
+3-channel classifiers and still ahead of every individual ERSP+CNN method
+(best CNN: SpectNet pooled, 71.7%). All three ERSP fixes were worth applying
+for scientific correctness, but only the hop fix gave a CNN method a boost on
+its own — see "Known Methodological Findings" below. High inter-subject
+variance (±12–16%) reflects genuine differences in individual EEG motor
+imagery responses (S04 > 90%, S02/S03 ~50–58%).
 
-See [`results/riemannian/figures/comparison_all_methods.png`](results/riemannian/figures/comparison_all_methods.png)
-for the full visual comparison, and [`EXPERIMENTS.md`](EXPERIMENTS.md) for the detailed
-narrative including the label-bug discovery and fix.
+See [`results/figures/final_comparison_all_methods.png`](results/figures/final_comparison_all_methods.png)
+for the full visual comparison including the ensemble, and
+[`EXPERIMENTS.md`](EXPERIMENTS.md#follow-up-experiments--statistical-validation-ensembling-improvement-attempts)
+for the detailed narrative (statistical validation, the ensemble, and the
+ShallowConvNet improvement attempts).
 
 ---
 
-## Known Methodological Finding — ERSP Baseline Window (pending reprocessing)
+## Known Methodological Findings — ERSP Computation (fixed and reprocessed, three times)
 
-The baseline window used to normalise every ERSP tensor (`BASELINE = (-0.5, 0.0)`,
-`src/config.py`) is shorter than the 1.024 s STFT window used to estimate it, so the
-baseline reference leaks post-cue signal. This flattens the ERD/ERS contrast visible
-in grand-average plots and biases the tensors that feed every model in Experiments
-1–5b below.
+Three independent issues were found in the ERSP computation (`src/ersp.py`)
+and fixed in sequence, plus a purely cosmetic colormap change. All were
+necessary for scientifically defensible, legible ERSP values; only one of
+the three (the hop fix) improved classification accuracy. This is itself
+worth reading as a finding, not just the fixes.
 
-Confirmed with the full 3 s pre-cue fixation period as baseline instead: the expected
-contralateral ERD reappears (S04 alone: -2.87 dB; 9 subjects pooled: -0.98 dB, same
-direction). See [`results/baseline_bug_before_fix/`](results/baseline_bug_before_fix/)
-for the before/diagnostic/confirmation images, and
-[`EXPERIMENTS.md`](EXPERIMENTS.md#diagnostic-finding--baseline-window-contamination-identified-reprocessing-pending)
-for the full write-up.
+**1. Baseline window too short.** `BASELINE = (-0.5, 0.0)` was shorter than
+the 1.024 s STFT window used to estimate it, so the baseline reference leaked
+post-cue signal — flattening the ERD/ERS contrast. Confirmed with the full 3 s
+pre-cue fixation period as baseline instead: the expected contralateral ERD
+reappears (S04 alone: -2.87 dB; 9 subjects pooled: -0.98 dB, same direction).
+See [`results/baseline_bug_before_fix/`](results/baseline_bug_before_fix/) for
+the before/diagnostic/confirmation images. Fixed by extending
+`EPOCH_TMIN`/`BASELINE` in `src/config.py`.
 
-**Status:** identified and confirmed, **not yet applied**. All results below were
-trained on ERSP tensors with the original (contaminated) baseline window.
-Reprocessing — regenerating the ERSP tensors with an extended baseline and
-re-running Experiments 1–5b — is planned as a separate follow-up.
+**2. Numerical epsilon comparable to signal scale.** A fixed `epsilon = 1e-12`
+added for `log(0)` safety was the same order of magnitude as the actual EEG
+power (MNE stores amplitude in volts, so squared STFT power sits in the
+~1e-12 to 1e-27 range) — this silently biased every ERSP value strongly
+negative, saturating 77-96% of the mu/beta bands at the ±6 dB clip floor.
+Fixed by scaling the epsilon to each trial's own power range
+(`eps = power.max() * 1e-12`), which brought the median ERSP value from an
+implausible -12/-13 dB down to a literature-plausible -2 dB. Confirmed
+visually with a classic Pfurtscheller-style ERD curve
+(`results/figures/erd_curve_classic_grandaverage_C3.png`): beta-band grand
+average now shows a clean -10 to -12% contralateral ERD.
+
+**3. STFT hop too large relative to the output size.** `_resize_2d()` stretches
+the raw STFT output to `(22, 128)` via bilinear interpolation. The frequency
+axis needed ~1.00x (22 real bins already). The time axis needed **7.11x**:
+with the original `STFT_HOP=64` (256ms), the 4.5s analysis window produced
+only 18 real STFT frames — the other ~110 output time-bins were pure
+interpolation, giving an illusion of ~35ms temporal resolution when the real
+resolution was ~256ms. Raised by the thesis advisor. Fixed by reducing
+`STFT_HOP` to 9 samples (36ms, 125 real frames, ~1.02x interpolation).
+
+**4. Colormap choice (visualisation only, no data/model change).** Even with
+all three fixes above, the grand-average heatmap plotted with a smooth
+diverging colormap (`RdYlBu_r`) still made the ERD hard to see at a glance.
+Switched to `jet` (the classic EEGLAB-style ERSP convention) — its sharper
+hue transitions make the 2-6 dB contralateral signal visible without further
+explanation. See `src/diagnostic_db_heatmap.py` for a standalone script that
+plots the grand-average in real (signed) dB units instead of the [0,1] scale
+used for training.
+
+**Net effect on classification:** the baseline-window fix alone took pooled
+CNNs from chance (~48-50%) to 70.7-74.5%. The epsilon fix then cost 2-4 points
+for EEGNet/SpectNet and collapsed ShallowConvNet to near-chance
+(54.5% ± 6.9%, unrecovered by the hop fix). The hop fix was net-neutral-to-
+positive, improving SpectNet pooled to 71.7% (its best result across all
+three fixes) without hurting EEGNet. Full before/after tables and the working
+hypotheses are in
+[`EXPERIMENTS.md`](EXPERIMENTS.md#second-diagnostic-finding--ersp-epsilon-bias-fixed-and-reprocessed)
+(epsilon) and
+[`EXPERIMENTS.md`](EXPERIMENTS.md#third-diagnostic-finding--stft-hop--resize_2d-undersampling-fixed-and-reprocessed)
+(hop).
 
 ---
 

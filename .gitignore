@@ -16,6 +16,7 @@ __pycache__/
 # Resultados generados (figuras y métricas se generan con el código)
 results/figures/*.png
 results/figures/*.pdf
+results/figures/erd_characterization/
 results/metrics/*.csv
 
 # Checkpoints de modelos entrenados (pueden ser muy pesados)
