@@ -81,8 +81,12 @@ class SpectNetGradCAM:
         self._handle.remove()
 
     def gradcam(self, x: torch.Tensor, target_class: int) -> np.ndarray:
-        """x: (1, C, F, T). Returns a (F, T) map in [0, 1], upsampled to the
-        input's own spatial size."""
+        """x: (1, C, F, T). Returns the RAW (F, T) Grad-CAM map, upsampled to
+        the input's own spatial size - NOT normalised per trial. Normalising
+        each trial to its own max before averaging would wash out exactly the
+        magnitude differences (across trials and across classes) this method
+        exists to show - same reasoning as channel_saliency() below. Normalise
+        once, globally across both classes, only at plot time."""
         self.model.zero_grad()
         logits = self.model(x)
         score = logits[0, target_class]
@@ -94,7 +98,6 @@ class SpectNetGradCAM:
         cam = F.relu((weights * acts).sum(dim=1, keepdim=True))  # (1,1,Fc,Tc)
         cam = F.interpolate(cam, size=x.shape[2:], mode="bilinear", align_corners=False)
         cam = cam[0, 0].numpy()
-        cam = cam / (cam.max() + 1e-8)
         return cam
 
     def channel_saliency(self, x: torch.Tensor, target_class: int) -> np.ndarray:
@@ -131,13 +134,14 @@ def load_subject_images(subject: int):
 
 # ── Plotting ──────────────────────────────────────────────────────────────
 
-def plot_gradcam(cam_mean: np.ndarray, cls_label: str, n_trials: int, out_path: Path):
+def plot_gradcam(cam_mean: np.ndarray, cls_label: str, n_trials: int, out_path: Path,
+                  vmax: float):
     times = np.linspace(ANALYSIS_TMIN, ANALYSIS_TMAX, IMG_TIME_BINS)
     freqs = np.linspace(ERSP_FMIN, ERSP_FMAX, IMG_FREQ_BINS)
 
     fig, ax = plt.subplots(figsize=(7, 5))
     im = ax.imshow(
-        cam_mean, aspect="auto", origin="lower", cmap="jet", vmin=0, vmax=1,
+        cam_mean, aspect="auto", origin="lower", cmap="jet", vmin=0, vmax=vmax,
         extent=[times[0], times[-1], freqs[0], freqs[-1]]
     )
     ax.axvline(0, color="white", linewidth=1.0, linestyle="--")
@@ -147,7 +151,7 @@ def plot_gradcam(cam_mean: np.ndarray, cls_label: str, n_trials: int, out_path: 
     ax.set_ylabel("Frequency (Hz)")
     ax.set_title(f"Grad-CAM — SpectNet pooled — {cls_label}\n"
                 f"Mean over {n_trials} correctly-classified trials (all 9 subjects)")
-    plt.colorbar(im, ax=ax, label="Grad-CAM (normalised)")
+    plt.colorbar(im, ax=ax, label="Grad-CAM (raw, shared scale)")
     plt.tight_layout()
     fig.savefig(str(out_path), dpi=150, bbox_inches="tight")
     plt.close(fig)
@@ -214,14 +218,18 @@ def main():
 
     cam_tool.close()
 
+    cam_means = {cls: np.mean(cams[cls], axis=0) for cls in cams if len(cams[cls]) > 0}
+    gradcam_vmax = max(m.max() for m in cam_means.values())  # shared across Left/Right
+
     for cls, cls_label in CLASS_NAMES.items():
         n = len(cams[cls])
         print(f"\n{cls_label}: {n} correctly-classified trials pooled")
         if n == 0:
             continue
-        cam_mean = np.mean(cams[cls], axis=0)
+        cam_mean = cam_means[cls]
         sal_mean = np.mean(sals[cls], axis=0)
-        plot_gradcam(cam_mean, cls_label, n, OUT_DIR / f"gradcam_{cls_label.lower()}.png")
+        plot_gradcam(cam_mean, cls_label, n, OUT_DIR / f"gradcam_{cls_label.lower()}.png",
+                     vmax=gradcam_vmax)
         plot_channel_saliency(sal_mean, cls_label, n,
                               OUT_DIR / f"saliency_{cls_label.lower()}.png")
 
