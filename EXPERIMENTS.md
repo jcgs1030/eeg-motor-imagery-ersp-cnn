@@ -596,16 +596,52 @@ explicit equality assertion is needed.
 | Weight (FBCSP) | Ensemble accuracy | vs. FBCSP alone | vs. SpectNet alone |
 |---|---|---|---|
 | 0.5 | 78.7% ± 12.8% | p=0.027 | p=0.008 |
-| **0.6** | **78.8% ± 12.7%** | **p=0.008** | **p=0.004** |
+| 0.6 | 78.8% ± 12.7% | p=0.008 | p=0.004 |
 | 0.7 | 77.8% ± 12.5% | p=0.008 | p=0.008 |
 | 0.4 | 77.0% ± 12.5% | p=0.637 (not sig.) | p=0.008 |
 
-**w=0.6 is the new best result in the project: 78.8% ± 12.7%, significantly
-better than either method alone.** At this weight the ensemble matches or
-beats the better of the two individual methods for all 9 subjects (see the
-slope plot) - FBCSP and SpectNet appear to make at least partially
-independent errors, which is exactly the condition under which averaging
-helps.
+**Methodological problem (flagged in advisor review, fixed below): `w` here
+was chosen by sweeping it and picking whichever value scored best on this
+same test set** (sessions 4-5) - the set the final number is reported on.
+That is leakage: a hyperparameter tuned against the test set inflates the
+reported accuracy, even if only slightly. See the corrected version
+immediately below for the number that should actually be reported.
+
+#### Corrected: weight chosen on validation, not test (`src/experiment_ensemble_validated.py`)
+
+Per subject, sessions 1-3 (T) are split into T-train/T-val (stratified,
+`test_size=VAL_SPLIT=0.15`, `seed=RANDOM_SEED`). FBCSP+LDA is refit on
+T-train only; `w` is swept on T-val (SpectNet pooled's existing frozen
+checkpoint is reused, not retrained). The `w` that maximises **mean
+validation accuracy across the 9 subjects** is then fixed, FBCSP is refit on
+the full T split (train+val, standard practice once a hyperparameter is
+chosen), and the ensemble is evaluated on E (test) **exactly once**.
+
+```
+Validation accuracy by weight (sessions 1-3 only, test set untouched):
+  w=0.3: 74.7%   w=0.4: 76.6%   w=0.5: 77.3% <-- chosen
+  w=0.6: 75.9%   w=0.7: 76.4%   w=0.8: 75.2%
+```
+
+| | Mean accuracy | Kappa | vs. FBCSP alone | vs. SpectNet alone |
+|---|---|---|---|---|
+| **Ensemble, w=0.5 (chosen on validation)** | **78.7% ± 12.8%** | **0.574** | **p=0.027** | **p=0.008** |
+
+**This is now the official result: 78.7% ± 12.8%, w=0.5, chosen honestly.**
+It happens to be almost identical to the old, improperly-selected 78.8%
+(w=0.6) - which is reassuring evidence that the ensemble's benefit is real
+and not an artifact of tuning against the test set, but the selection
+procedure above is the one that should be cited, not the sweep-on-test
+table. At this weight the ensemble still beats both individual methods
+significantly (FBCSP alone p=0.027, SpectNet alone p=0.008).
+
+**Caveat, documented not fixed**: SpectNet pooled's own checkpoint
+(`results/spectnet_all.pth`) was trained before this validation split
+existed, using the full T data with its own separate internal 15% val split
+for early stopping only - so it has technically already seen T-val trials
+during its own training. Retraining SpectNet with a clean 3-way split is out
+of scope here; this fix addresses specifically the ensemble-weight-selection
+leakage the advisor flagged, not a from-scratch re-run of the CNN itself.
 
 ### 4. Data augmentation on ShallowConvNet (`src/augmentation.py`, `src/experiment_augmentation.py`)
 
@@ -991,7 +1027,7 @@ single pooled model, no std to report.
 
 | Method | Exp | Accuracy | F1-score | Kappa |
 |---|---|---|---|---|
-| **Ensemble: FBCSP+LDA + SpectNet (w=0.6)** | **follow-up** | **78.8% ± 12.7%** | — | — |
+| **Ensemble: FBCSP+LDA + SpectNet (w=0.5, chosen on validation)** | **follow-up** | **78.7% ± 12.8%** | — | **0.574** |
 | FBCSP+LDA | 5a | 75.9% ± 13.4% | 75.5% ± 13.7% | 0.519 |
 | FBCSP+SVM | 5a | 73.6% ± 13.5% | 72.7% ± 14.5% | 0.472 |
 | Riem-TS+LDA | 5b | 72.9% ± 13.4% | 72.0% ± 13.9% | 0.459 |
@@ -1010,9 +1046,10 @@ single pooled model, no std to report.
 **Best single method: FBCSP+LDA at 75.9% mean accuracy (Kappa 0.519)**, still
 clearly ahead of every individual ERSP+CNN method even after the hop fix
 recovered some ground for SpectNet pooled (70.0%→71.7%). **Best result
-overall: the FBCSP+SpectNet ensemble at 78.8% ± 12.7%** (see "Follow-up
-Experiments" above) — the only method found in this project that
-significantly beats FBCSP alone (p=0.008). The epsilon fix (see "Second
+overall: the FBCSP+SpectNet ensemble at 78.7% ± 12.8%** (w=0.5, chosen on a
+validation split, not on test - see "Follow-up Experiments" above) — the
+only method found in this project that significantly beats FBCSP alone
+(p=0.027). The epsilon fix (see "Second
 Diagnostic Finding") is what cost the CNN methods their individual edge —
 before it, pooled SpectNet reached 74.5%, essentially tying FBCSP; the hop
 fix (see "Third Diagnostic Finding") partially recovered that gap, and
@@ -1020,6 +1057,171 @@ ensembling with FBCSP recovers the rest and then some. ShallowConvNet, both
 pooled and subject-specific, remains the weakest method in the entire
 comparison — ruled out learning rate and (so far) data augmentation as fixes,
 see "Follow-up Experiments".
+
+---
+
+## Interpretability — Grad-CAM and Channel Saliency (`src/gradcam_spectnet.py`)
+
+Per advisor request: does SpectNet pooled actually look at the mu/beta
+contralateral region the ERD/ERS characterization (`erd_characterization.py`)
+found to be statistically significant, or is it picking up on something
+else? Two complementary attribution methods, computed only on
+correctly-classified evaluation-session trials, pooled across all 9
+subjects (992 Left, 1044 Right trials):
+
+**1. Grad-CAM** (Selvaraju et al., 2017) at the last convolutional layer
+(`conv2`, post-ReLU, pre-`pool2`, native resolution 21x29, upsampled to the
+full 22x128 image). This answers "where in time-frequency" the decision
+comes from, but SpectNet mixes all 3 input channels together starting at
+`conv1`, so this map cannot be attributed back to a single channel.
+
+`results/figures/gradcam/gradcam_left.png`, `gradcam_right.png`
+
+**Result: strong agreement with the statistical ERD/ERS finding.** For both
+classes, Grad-CAM concentrates almost entirely in the mu band (8-13Hz),
+starting shortly after the cue (t≈0.3-0.5s) and persisting through the
+trial - the same time-frequency region `erd_characterization.py` found
+significant via cluster-based permutation testing (p=0.0039 for the
+C3-Right/C4-Left contralateral pairs). The model is not attending to beta
+band or to the pre-cue baseline.
+
+**2. Input-gradient saliency**, `|d(class score)/d(input)|`, computed
+directly on the 3-channel input (no upsampling needed - same resolution as
+the input, 22x128, per channel).
+
+`results/figures/gradcam/saliency_left.png`, `saliency_right.png`
+
+**Methodological correction (caught before documenting conclusions from
+it):** the first version of `channel_saliency()` normalised each channel
+independently to its own [0,1] max before plotting. That makes every
+channel's peak look identical BY CONSTRUCTION, regardless of its true
+relative importance - it is impossible to see whether one channel matters
+more than another under per-channel normalisation, which is exactly the
+question this method exists to answer. Fixed by returning the raw,
+unnormalised gradient magnitude and applying a single shared colour scale
+(one `vmax`, computed once across all channels) at plot time instead.
+
+**Result, corrected: C4 has the highest saliency for BOTH classes**, not a
+clean contralateral C3↔C4 switch. The mu-band, post-cue region is where all
+three channels peak (consistent with the Grad-CAM result above), but C4's
+peak is visibly and consistently larger than C3's or Cz's, whether the
+trial is Left or Right. This is still an honest, non-trivial result - not
+the "no lateralization at all" claim from the uncorrected plots, but also
+not the clean contralateral symmetry (C3 dominant for Right, C4 dominant
+for Left) that the ERD characterization's own statistics would predict.
+
+### Interpretation
+
+The model relies more heavily on C4 in general - plausibly because, across
+9 pooled subjects with very different signal quality (S02/S03 near chance,
+S04 >90%, see "Why doesn't the grand-average look better" discussion), C4
+happens to carry a cleaner, more consistently informative signal on
+average, so gradient-based importance concentrates there regardless of
+class, and the Left/Right distinction is read off the pattern *within* that
+channel rather than by switching which channel dominates. This does not
+contradict the ERD/ERS characterization (which is about where a real
+physiological effect exists in the data, aggregated fairly per subject) -
+it is a separate statement about which channel a specific trained pooled
+model's decision boundary happens to weight most heavily, which can differ
+from the "textbook" physiological picture for reasons including per-subject
+signal quality, electrode impedance/noise differences, and how `conv1`
+mixes channels from the very first layer.
+
+## C3−C4 Explicit Difference Channel (`src/experiment_c3c4_channel.py`)
+
+Motivated directly by the finding above: does giving the model an explicit
+C3−C4 difference channel (computed on the raw signal before the ERSP
+transform, then run through `compute_ersp_image()` like any other channel)
+change classification accuracy or saliency? Exploratory - trains a SEPARATE
+4-channel SpectNet pooled model (`results/spectnet_c3c4_all.pth`), does not
+touch the production 3-channel checkpoint or pipeline.
+
+| | Mean accuracy |
+|---|---|
+| SpectNet pooled, 3-channel (C3, Cz, C4) | 71.5% ± 10.2% |
+| SpectNet pooled, 4-channel (C3, Cz, C4, C3−C4) | 72.2% ± 10.6% |
+| Difference | +0.7pp |
+
+`results/figures/c3c4_channel/saliency_4ch_left.png`,
+`saliency_4ch_right.png`
+
+A small, directionally positive accuracy change - not a breakthrough. The
+per-channel saliency (same corrected, globally-normalised method as above)
+shows the new C3−C4 channel picks up a moderate signal in the same mu-band
+region, but **does not displace C4 as the most salient channel** - C4
+remains the strongest for both classes even with the explicit difference
+channel available. The model did not restructure its reliance on C4 just
+because an explicit contrast channel was offered to it; it still finds more
+useful signal in C4 directly than in the engineered C3−C4 feature.
+
+---
+
+## AST (Audio Spectrogram Transformer) Fine-Tuning (`src/experiment_ast.py`)
+
+Per advisor request: fine-tune AST (Gong et al. 2021,
+`MIT/ast-finetuned-audioset-10-10-0.4593`, 86M params, pretrained on
+AudioSet) on our ERSP images, compared against SpectNet and FBCSP+LDA using
+the same split.
+
+**Adaptation, forced by being CPU-only in this environment**: benchmarked
+AST's native resolution (128 mel bins x 1024 frames) at ~2s/sample forward
+alone, CPU-bound regardless of batch size - intractable for fine-tuning at
+this project's scale. Two changes made it feasible (~130-220ms/sample, a
+~10-15x speedup):
+1. The 3 EEG channels (C3, Cz, C4) are stacked along the frequency axis
+   into one single-channel "image" (one AST forward pass per trial instead
+   of three).
+2. A smaller patch grid (`patch_size=8`, stride=8, vs. native
+   `patch_size=16`, stride=10) keeps the number of patches - and therefore
+   quadratic attention cost - tractable (130 patches vs. ~1200). This means
+   the patch-embedding convolution and position embeddings cannot be loaded
+   from the pretrained checkpoint (size mismatch, reinitialised); the 12
+   pretrained transformer encoder blocks (the bulk of the parameters) still
+   load normally.
+
+Conservative fine-tuning: embeddings (necessarily, reinitialised), the last
+2 transformer blocks, and a new linear head are trained (14.3M of 85.2M
+parameters); the other 10 blocks stay frozen.
+
+**Scope, due to the same CPU cost**: trained and evaluated on a 4-subject
+subset (S01, S03, S04, S06 - a deliberate mix of weak/average/strong
+signal, not cherry-picked for a favourable result), not all 9. SpectNet and
+FBCSP+LDA numbers below are those same 4 subjects' existing per-subject
+test accuracy, for a fair comparison at this smaller scale. One run (10
+epochs, pooled over the 4 subjects, 1620 training trials) took ~92 minutes
+wall-clock on CPU.
+
+| | Mean accuracy (4 subjects) | Kappa |
+|---|---|---|
+| AST (fine-tuned) | 65.4% ± 9.5% | 0.309 |
+| SpectNet (pooled) | 72.3% ± 12.6% | — |
+| FBCSP+LDA | 73.7% ± 14.8% | — |
+
+**Result: AST underperforms both existing methods by 7-8pp on this
+subset**, n=4 too small for a formal significance test. Per-subject, AST is
+below both comparison methods on every one of the 4 subjects (S01: 64.1%
+vs. 69.7%/67.2%; S03: 52.2% vs. 54.1%/55.0%; S04: 79.1% vs. 89.1%/95.3%;
+S06: 66.5% vs. 76.5%/77.4%).
+
+### Interpretation
+
+Not a fair fight against a from-scratch-designed small CNN like SpectNet
+(66K params) or a classical method tuned specifically for this exact
+problem: AST's patch embedding and position embeddings - arguably the part
+of the architecture most responsible for learning *where* in a spectrogram
+to look - start from scratch here, because our spectrograms are far smaller
+than what AST was pretrained on, and only the deepest, most task-specific
+pretrained knowledge (general audio transformer blocks) transfers at all.
+With 85M parameters, mostly frozen, and only ~1.4k pooled training trials,
+there is a real risk the trainable 14.3M-parameter portion simply does not
+have enough signal to learn a good classifier from scratch on this task,
+while a 66K-parameter SpectNet trained end-to-end on the same data does.
+This is a genuine negative result for this specific adaptation, not
+necessarily evidence against transformers for EEG in general - a GPU
+environment permitting the native 128x1024 resolution (position embeddings
+transfer cleanly, only the classifier head needs training) would be a
+fairer test of AST's actual pretrained audio representations, which this
+CPU-constrained setup could not run.
 
 ---
 
@@ -1093,9 +1295,11 @@ see "Follow-up Experiments".
     SpectNet (p=0.91). See "Follow-up Experiments" above.
 
 11. **Ensembling FBCSP+LDA with SpectNet pooled gives the best result in the
-    project: 78.8% ± 12.7%** (weighted average of predict_proba/softmax,
-    w=0.6 favouring FBCSP), significantly ahead of FBCSP alone (p=0.008) and
-    SpectNet alone (p=0.004). The two methods appear to make at least
+    project: 78.7% ± 12.8%** (weighted average of predict_proba/softmax,
+    w=0.5, chosen on a validation split carved out of sessions 1-3 - not by
+    sweeping against the test set, which was the original, flawed version
+    of this experiment), significantly ahead of FBCSP alone (p=0.027) and
+    SpectNet alone (p=0.008). The two methods appear to make at least
     partially independent errors — classical multi-band features and a
     full time-frequency CNN are complementary, not redundant, on this task.
 

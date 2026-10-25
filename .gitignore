@@ -17,6 +17,8 @@ __pycache__/
 results/figures/*.png
 results/figures/*.pdf
 results/figures/erd_characterization/
+results/figures/gradcam/
+results/figures/c3c4_channel/
 results/metrics/*.csv
 
 # Checkpoints de modelos entrenados (pueden ser muy pesados)

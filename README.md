@@ -256,10 +256,11 @@ full four-stage before/after table.
 
 ### Key Finding
 
-**Best result: an FBCSP+LDA / SpectNet ensemble at 78.8% ± 12.7%** — a
+**Best result: an FBCSP+LDA / SpectNet ensemble at 78.7% ± 12.8%** — a
 weighted average of FBCSP's predict_proba and SpectNet pooled's softmax
-output, significantly ahead of either method alone (paired Wilcoxon,
-p=0.008 and p=0.004 respectively; n=9 subjects). **Best single method:
+output (weight chosen on a validation split from sessions 1-3, not on the
+test set), significantly ahead of either method alone (paired Wilcoxon,
+p=0.027 and p=0.008 respectively; n=9 subjects). **Best single method:
 FBCSP+LDA at 75.9%**, consistent with the BCI-IV-2b literature for
 3-channel classifiers and still ahead of every individual ERSP+CNN method
 (best CNN: SpectNet pooled, 71.7%). All three ERSP fixes were worth applying
