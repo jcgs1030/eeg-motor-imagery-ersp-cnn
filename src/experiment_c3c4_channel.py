@@ -49,6 +49,7 @@ from ersp import compute_ersp_image
 from models import get_model
 from train_fbcsp import EVENT_LABEL_MAP
 from gradcam_spectnet import SpectNetGradCAM
+from diagnostic_stats_test import per_subject_acc_pooled
 
 mne.set_log_level("WARNING")
 
@@ -217,9 +218,20 @@ def main():
     for subj, acc in accs.items():
         print(f"  S{subj:02d}: {acc:.1%}")
     vals = np.array(list(accs.values()))
+
+    # Baseline read from the CURRENT results/spectnet_all.pth checkpoint,
+    # not a hardcoded number - a hardcoded literal here went stale the
+    # moment the 3-channel model was retrained at a different resolution
+    # (the 71.5% figure from EXPERIMENTS.md was at IMG_TIME_BINS=128;
+    # the checkpoint and this script both now run at whatever is in
+    # config.py, so this comparison always matches what's actually loaded).
+    baseline_accs = per_subject_acc_pooled("spectnet")
+    baseline_vals = np.array(list(baseline_accs.values()))
+
     print(f"\n  4-channel SpectNet pooled: {vals.mean():.1%} ± {vals.std():.1%}")
-    print(f"  3-channel SpectNet pooled (baseline, from EXPERIMENTS.md): 71.5% ± 10.2%")
-    print(f"  Difference: {100*(vals.mean()-0.715):+.1f}pp")
+    print(f"  3-channel SpectNet pooled (baseline, current results/spectnet_all.pth): "
+          f"{baseline_vals.mean():.1%} ± {baseline_vals.std():.1%}")
+    print(f"  Difference: {100*(vals.mean()-baseline_vals.mean()):+.1f}pp")
 
     print("\n== Step 4: per-channel saliency with the 4-channel model ==")
     cam_tool = SpectNetGradCAM(model)
