@@ -83,13 +83,15 @@ ICA_SEED      = 42
 # Transform: STFT with Hann window
 STFT_WIN_LEN  = 256   # samples (1.024 s at 250 Hz)
 # Hop chosen so the number of REAL STFT frames inside the analysis window
-# (ANALYSIS_TMIN..ANALYSIS_TMAX, 4.5s) is close to IMG_TIME_BINS (128), so
-# _resize_2d() only needs to interpolate ~1.02x instead of ~7.1x. With the
-# previous 64-sample hop, only 18 real frames existed and the other ~110
-# output time-bins were pure bilinear interpolation between them, giving an
-# illusion of ~35ms temporal resolution when the real resolution was the
-# ~256ms hop. See EXPERIMENTS.md "Third Diagnostic Finding — STFT Hop /
-# resize_2d Undersampling".
+# (ANALYSIS_TMIN..ANALYSIS_TMAX, 4.5s) is at least IMG_TIME_BINS (125 real
+# frames vs. 32 output bins below) - _resize_2d() always has enough real
+# frames to downsample FROM, never has to invent resolution by interpolating
+# UP between too few real frames. With the previous 64-sample hop, only 18
+# real frames existed and the other ~110 output time-bins (back when
+# IMG_TIME_BINS was 128) were pure bilinear interpolation between them,
+# giving an illusion of ~35ms temporal resolution when the real resolution
+# was the ~256ms hop. See EXPERIMENTS.md "Third Diagnostic Finding — STFT
+# Hop / resize_2d Undersampling".
 STFT_HOP      = 9     # samples (36 ms) -> 125 real frames in the 4.5s analysis window
 STFT_OVERLAP  = 1 - (STFT_HOP / STFT_WIN_LEN)  # ~96.5%, derived from STFT_HOP
 
@@ -98,9 +100,14 @@ ERSP_FMIN     = 8.0   # Hz (lower mu band)
 ERSP_FMAX     = 30.0  # Hz (upper beta band)
 
 # Output image dimensions (per channel, per trial)
-# 22 frequency bins × 128 time steps
+# 22 frequency bins × 32 time steps. Reduced from the original 128 time bins
+# after experiment_resolution_sweep.py (advisor request: cut per-trial image
+# weight): 32 bins keeps accuracy within noise of 128 bins (69.4% vs 70.0%,
+# pooled 4-subject sweep) while cutting per-trial size ~4x (8.2 KB vs 33.0
+# KB). A Gaussian anti-aliasing blur before resize was also tested
+# (sigma 0.5/1.0) and never helped at any resolution - not used here.
 IMG_FREQ_BINS = 22
-IMG_TIME_BINS = 128
+IMG_TIME_BINS = 32
 IMG_SIZE      = (IMG_FREQ_BINS, IMG_TIME_BINS)
 
 # ── Training ──────────────────────────────────────────────────────────────────
