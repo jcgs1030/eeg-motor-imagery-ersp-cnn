@@ -48,7 +48,10 @@ def _to_db(norm: np.ndarray) -> np.ndarray:
 # ── Core ERSP ────────────────────────────────────────────────────────────────
 
 def compute_ersp_image(epoch_data: np.ndarray,
-                       sfreq: float = SFREQ) -> np.ndarray:
+                       sfreq: float = SFREQ,
+                       n_freq_bins: int = IMG_FREQ_BINS,
+                       n_time_bins: int = IMG_TIME_BINS,
+                       sigma: float = 0.0) -> np.ndarray:
     """
     Compute the ERSP image for a single trial.
 
@@ -65,10 +68,23 @@ def compute_ersp_image(epoch_data: np.ndarray,
                  Contamination" for why the previous 0.5s baseline window was
                  biased and how this was verified).
     sfreq      : sampling frequency
+    n_freq_bins, n_time_bins : output image size. Default to the production
+                 IMG_FREQ_BINS/IMG_TIME_BINS - callers that don't pass these
+                 get byte-identical output to before this parameter existed.
+                 Exposed so experiment_resolution_sweep.py can request a
+                 smaller image without touching the production constants.
+    sigma      : std-dev (in pixels, at the pre-resize ERSP resolution) of an
+                 optional Gaussian blur applied BEFORE resizing to
+                 (n_freq_bins, n_time_bins) - anti-aliasing when downsampling
+                 to a resolution much coarser than the native STFT grid.
+                 sigma=0.0 (default) skips the filter entirely: gaussian_filter
+                 with sigma=0 is mathematically a no-op, but scipy still does
+                 the convolution work, so this short-circuits it and keeps the
+                 default path byte-identical to before this parameter existed.
 
     Returns
     -------
-    ersp_img : array (IMG_FREQ_BINS, IMG_TIME_BINS) — normalised ERSP image
+    ersp_img : array (n_freq_bins, n_time_bins) — normalised ERSP image
                [0, 1], covering ANALYSIS_TMIN..ANALYSIS_TMAX (the same output
                window as before this fix — only the baseline measurement changed).
     """
@@ -114,8 +130,13 @@ def compute_ersp_image(epoch_data: np.ndarray,
     freq_mask = (freqs >= ERSP_FMIN) & (freqs <= ERSP_FMAX)
     ersp_roi = ersp_analysis[freq_mask, :]    # (n_freq_roi, n_times_roi)
 
-    # ── Resize to IMG_SIZE with interpolation ──
-    ersp_resized = _resize_2d(ersp_roi, IMG_FREQ_BINS, IMG_TIME_BINS)
+    # ── Optional anti-aliasing blur, at the native pre-resize resolution ──
+    if sigma > 0:
+        from scipy.ndimage import gaussian_filter
+        ersp_roi = gaussian_filter(ersp_roi, sigma=sigma)
+
+    # ── Resize to (n_freq_bins, n_time_bins) with interpolation ──
+    ersp_resized = _resize_2d(ersp_roi, n_freq_bins, n_time_bins)
 
     # Clip to a fixed dB range and scale to [0, 1].
     # Using a per-trial min-max would destroy inter-trial comparability:
