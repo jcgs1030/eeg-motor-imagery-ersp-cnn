@@ -59,6 +59,8 @@ N_PERMUTATIONS = 2000
 
 OUT_DIR = FIGURES_DIR / "erd_characterization"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
+CLEAN_OUT_DIR = OUT_DIR / "clean"
+CLEAN_OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def load_subject_epochs(subject: int) -> mne.Epochs:
@@ -140,7 +142,15 @@ def cluster_test_significance(subject_maps_1ch: np.ndarray):
 
 
 def plot_channel_class(grand_avg, sig_mask, times, freqs, ch_name, cls_label,
-                       n_subjects, out_path):
+                       n_subjects, out_path, clean_out_path):
+    """Saves two versions of the same figure: the annotated one at out_path
+    (axes, colorbar, title - kept for anyone reading the figure on its own,
+    e.g. the thesis document), and a bare heatmap-only one at
+    clean_out_path (no axes, no colorbar, no title - meant for a composed
+    multi-panel figure where a single shared axis/colorbar applies to all
+    panels). Both show the exact same data; the significance contour and
+    cue line are kept in both since they are part of the plotted data, not
+    metadata text."""
     fig, ax = plt.subplots(figsize=(7, 5))
     im = ax.imshow(
         grand_avg, aspect="auto", origin="lower", cmap="jet",
@@ -161,6 +171,20 @@ def plot_channel_class(grand_avg, sig_mask, times, freqs, ch_name, cls_label,
     fig.savefig(str(out_path), dpi=150, bbox_inches="tight")
     plt.close(fig)
     print(f"    Saved: {out_path.name}")
+
+    fig, ax = plt.subplots(figsize=(7, 5))
+    ax.imshow(
+        grand_avg, aspect="auto", origin="lower", cmap="jet",
+        vmin=-6, vmax=6, extent=[times[0], times[-1], freqs[0], freqs[-1]]
+    )
+    ax.axvline(0, color="white", linewidth=1.0, linestyle="--")
+    if sig_mask.any():
+        ax.contour(times, freqs, sig_mask.astype(float),
+                  levels=[0.5], colors="black", linewidths=1.5)
+    ax.set_axis_off()
+    fig.savefig(str(clean_out_path), dpi=150, bbox_inches="tight", pad_inches=0)
+    plt.close(fig)
+    print(f"    Saved: {clean_out_path.name} (clean)")
 
 
 def main():
@@ -187,8 +211,10 @@ def main():
             grand_avg = subj_maps.mean(axis=0)          # (n_freqs, n_times)
             sig_mask, min_pv = cluster_test_significance(subj_maps)
             out_path = OUT_DIR / f"erd_{ch_name}_{cls_name}.png"
+            clean_out_path = CLEAN_OUT_DIR / f"erd_{ch_name}_{cls_name}.png"
             plot_channel_class(grand_avg, sig_mask, times, freqs,
-                              ch_name, cls_label, n_subjects, out_path)
+                              ch_name, cls_label, n_subjects,
+                              out_path, clean_out_path)
             summary_rows.append({
                 "channel": ch_name, "class": cls_label,
                 "min_cluster_p": min_pv,
