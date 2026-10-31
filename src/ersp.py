@@ -74,9 +74,12 @@ def compute_ersp_image(epoch_data: np.ndarray,
                  Exposed so experiment_resolution_sweep.py can request a
                  smaller image without touching the production constants.
     sigma      : std-dev (in pixels, at the pre-resize ERSP resolution) of an
-                 optional Gaussian blur applied BEFORE resizing to
-                 (n_freq_bins, n_time_bins) - anti-aliasing when downsampling
-                 to a resolution much coarser than the native STFT grid.
+                 optional Gaussian blur applied BEFORE resizing, along the
+                 TIME axis only - anti-aliasing when downsampling time to a
+                 resolution much coarser than the native STFT grid. The
+                 frequency axis is never downsampled (22 native bins -> 22
+                 output bins), so blurring it would only smear mu/beta
+                 across neighbouring bins.
                  sigma=0.0 (default) skips the filter entirely: gaussian_filter
                  with sigma=0 is mathematically a no-op, but scipy still does
                  the convolution work, so this short-circuits it and keeps the
@@ -130,10 +133,10 @@ def compute_ersp_image(epoch_data: np.ndarray,
     freq_mask = (freqs >= ERSP_FMIN) & (freqs <= ERSP_FMAX)
     ersp_roi = ersp_analysis[freq_mask, :]    # (n_freq_roi, n_times_roi)
 
-    # ── Optional anti-aliasing blur, at the native pre-resize resolution ──
+    # ── Optional anti-aliasing blur, time axis only, at native resolution ──
     if sigma > 0:
         from scipy.ndimage import gaussian_filter
-        ersp_roi = gaussian_filter(ersp_roi, sigma=sigma)
+        ersp_roi = gaussian_filter(ersp_roi, sigma=(0, sigma))
 
     # ── Resize to (n_freq_bins, n_time_bins) with interpolation ──
     ersp_resized = _resize_2d(ersp_roi, n_freq_bins, n_time_bins)

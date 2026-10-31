@@ -33,11 +33,23 @@ class ShallowConvNet(nn.Module):
                  n_time: int = 128,
                  n_classes: int = 2,
                  n_filters_time: int = 40,
-                 filter_time_length: int = 25,
-                 pool_time_length: int = 75,
-                 pool_time_stride: int = 15,
+                 filter_time_length: int = None,
+                 pool_time_length: int = None,
+                 pool_time_stride: int = None,
                  dropout: float = 0.5):
         super().__init__()
+
+        # Temporal kernel/pool lengths were tuned for 128 time bins (25/75/15).
+        # Unless given explicitly, scale them with n_time so the model still
+        # builds at coarser resolutions (e.g. 32 bins -> 6/19/4). At
+        # n_time=128 this reproduces the original values exactly.
+        scale = n_time / 128
+        if filter_time_length is None:
+            filter_time_length = max(1, round(25 * scale))
+        if pool_time_length is None:
+            pool_time_length = max(1, round(75 * scale))
+        if pool_time_stride is None:
+            pool_time_stride = max(1, round(15 * scale))
 
         # ── Temporal convolution ──
         self.conv_time = nn.Conv2d(

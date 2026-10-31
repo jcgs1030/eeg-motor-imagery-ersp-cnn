@@ -71,7 +71,7 @@ mne.set_log_level("WARNING")
 
 AST_CHECKPOINT = "MIT/ast-finetuned-audioset-10-10-0.4593"
 NUM_MEL_BINS   = 66   # 3 channels x 22 freq bins, stacked
-MAX_LENGTH     = 128  # time bins, unchanged
+MAX_LENGTH     = 128  # time bins - pinned to the original resolution, independent of IMG_TIME_BINS
 PATCH_SIZE     = 8
 FREQ_STRIDE    = 8
 TIME_STRIDE    = 8
@@ -124,7 +124,7 @@ def load_stacked_images(subject: int, suffix: str):
     stacked = np.zeros((n, MAX_LENGTH, NUM_MEL_BINS), dtype=np.float32)
     for i in range(n):
         for ch in range(N_CHANNELS):
-            img = compute_ersp_image(X[i, ch], sfreq=SFREQ)  # (freq=22, time=128)
+            img = compute_ersp_image(X[i, ch], sfreq=SFREQ, n_time_bins=MAX_LENGTH)  # (freq=22, time=128)
             stacked[i, :, ch * 22:(ch + 1) * 22] = img.T       # -> (time=128, freq=22)
     return stacked, y
 

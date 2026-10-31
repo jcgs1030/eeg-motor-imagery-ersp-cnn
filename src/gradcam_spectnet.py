@@ -18,11 +18,14 @@ Two complementary maps, per predicted class (only on correctly classified
 trials, pooled across all 9 subjects' evaluation-session trials):
 
   1. Grad-CAM (Selvaraju et al., 2017) at the last conv layer (conv2, taken
-     post-ReLU / pre-pool2, spatial resolution 21x29) - "where" in
-     time-frequency the decision comes from, upsampled to the full 22x128
-     image for overlay.
+     post-ReLU / pre-pool2; 21x5 at IMG_TIME_BINS=32) - "where" in
+     time-frequency the decision comes from, upsampled to the input image
+     for overlay. pool2 floors its output, so trailing conv2 columns it
+     never reads (column 4 of 5 at 32 bins) are cropped first, and the map
+     is upsampled only over the input columns those conv2 positions can
+     see; the remaining input columns get zero importance.
   2. Input-gradient saliency, |d(class score)/d(input)|, kept per channel
-     (3, 22, 128) - "which channel" (C3/Cz/C4) and where, at full
+     (3, 22, IMG_TIME_BINS) - "which channel" (C3/Cz/C4) and where, at full
      resolution, no upsampling needed.
 
 Usage:
@@ -92,13 +95,27 @@ class SpectNetGradCAM:
         score = logits[0, target_class]
         score.backward()
 
-        grads = self._activation.grad          # (1, 16, Fc, Tc)
-        acts  = self._activation.detach()       # (1, 16, Fc, Tc)
+        # Keep only the conv2 columns pool2 actually reads (floor mode drops
+        # the trailing Tc % k ones; their gradient is exactly zero, but their
+        # activations would still leak into the CAM).
+        k_pool2 = self.model.pool2.kernel_size[1]
+        n_used = (self._activation.shape[-1] // k_pool2) * k_pool2
+        grads = self._activation.grad[..., :n_used]       # (1, 16, Fc, n_used)
+        acts  = self._activation.detach()[..., :n_used]   # (1, 16, Fc, n_used)
         weights = grads.mean(dim=(2, 3), keepdim=True)
-        cam = F.relu((weights * acts).sum(dim=1, keepdim=True))  # (1,1,Fc,Tc)
-        cam = F.interpolate(cam, size=x.shape[2:], mode="bilinear", align_corners=False)
-        cam = cam[0, 0].numpy()
-        return cam
+        cam = F.relu((weights * acts).sum(dim=1, keepdim=True))  # (1,1,Fc,n_used)
+
+        # Those conv2 columns read pool1 columns [0, n_used + kw2 - 1), which
+        # cover input columns [0, k_pool1 * that). Upsample onto that span
+        # only; later input columns cannot influence the logits.
+        k_pool1 = self.model.pool1.kernel_size[1]
+        kw_conv2 = self.model.conv2.kernel_size[1]
+        n_freq, n_time = x.shape[2:]
+        span = min(n_time, k_pool1 * (n_used + kw_conv2 - 1))
+        cam = F.interpolate(cam, size=(n_freq, span), mode="bilinear", align_corners=False)
+        out = np.zeros((n_freq, n_time), dtype=np.float32)
+        out[:, :span] = cam[0, 0].numpy()
+        return out
 
     def channel_saliency(self, x: torch.Tensor, target_class: int) -> np.ndarray:
         """x: (1, C, F, T). Returns RAW |d(score)/d(input)|, shape (C, F, T) -

@@ -104,8 +104,10 @@ ERSP_FMAX     = 30.0  # Hz (upper beta band)
 # after experiment_resolution_sweep.py (advisor request: cut per-trial image
 # weight): 32 bins keeps accuracy within noise of 128 bins (69.4% vs 70.0%,
 # pooled 4-subject sweep) while cutting per-trial size ~4x (8.2 KB vs 33.0
-# KB). A Gaussian anti-aliasing blur before resize was also tested
-# (sigma 0.5/1.0) and never helped at any resolution - not used here.
+# KB). A Gaussian anti-aliasing blur before resize (sigma 0.5/1.0) was also
+# swept, but that run blurred the frequency axis too (bug, since fixed in
+# ersp.py: blur is now time-only), so its "blur never helped" result is
+# confounded and must be rerun before being cited. No blur is used here.
 IMG_FREQ_BINS = 22
 IMG_TIME_BINS = 32
 IMG_SIZE      = (IMG_FREQ_BINS, IMG_TIME_BINS)
