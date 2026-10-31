@@ -104,10 +104,15 @@ ERSP_FMAX     = 30.0  # Hz (upper beta band)
 # after experiment_resolution_sweep.py (advisor request: cut per-trial image
 # weight): 32 bins keeps accuracy within noise of 128 bins (69.4% vs 70.0%,
 # pooled 4-subject sweep) while cutting per-trial size ~4x (8.2 KB vs 33.0
-# KB). A Gaussian anti-aliasing blur before resize (sigma 0.5/1.0) was also
-# swept, but that run blurred the frequency axis too (bug, since fixed in
-# ersp.py: blur is now time-only), so its "blur never helped" result is
-# confounded and must be rerun before being cited. No blur is used here.
+# KB). A time-only Gaussian anti-aliasing blur before resize was also swept
+# (rerun after fixing a bug that blurred frequency too): sigma=0.5 gives at
+# most +0.8pp (32 bins: 69.5% vs 69.4%) and sigma=1.0 hurts (32 bins: 66.6%),
+# so no blur is used here. Caveat: the sweep scores on sessions 4-5, the same
+# set final results are reported on. See EXPERIMENTS.md, "ERSP Resolution".
+#
+# Subject-specific retraining at 32 bins (n=9, Wilcoxon vs 128 bins):
+# SpectNet 70.8% -> 69.5% (p=0.074, lower on 7/9 subjects), EEGNet 69.0% ->
+# 68.6% (p=0.734), ShallowConvNet 54.5% -> 54.8% (p=1.0).
 IMG_FREQ_BINS = 22
 IMG_TIME_BINS = 32
 IMG_SIZE      = (IMG_FREQ_BINS, IMG_TIME_BINS)
