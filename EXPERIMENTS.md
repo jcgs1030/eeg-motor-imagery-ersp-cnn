@@ -664,20 +664,24 @@ split, and therefore w, changes):
 FBCSP+LDA alone: 75.9%; SpectNet pooled alone: 67.8% (mean of per-subject
 accuracies; 68.0% is the accuracy over all pooled trials).
 
-Paired Wilcoxon (n=9), computed only for two seeds - the script reports
-the last run only, and seed 42 was run separately:
+Paired Wilcoxon (n=9 subjects), computed for every run:
 
-| Seed | vs. FBCSP alone | vs. SpectNet alone |
-|---|---|---|
-| 42 (w=0.6) | +2.0pp, **p=0.016** | +10.1pp, p=0.004 |
-| 46 (w=0.4) | +1.1pp, p=0.219 (not sig.) | +9.2pp, p=0.004 |
+| Seed | w | vs. FBCSP alone | vs. SpectNet alone |
+|---|---|---|---|
+| 42 | 0.6 | +2.0pp, **p=0.016** | +10.1pp, **p=0.004** |
+| 43 | 0.5 | +1.5pp, p=0.070 | +9.6pp, **p=0.004** |
+| 44 | 0.5 | +1.5pp, p=0.070 | +9.6pp, **p=0.004** |
+| 45 | 0.4 | +1.1pp, p=0.219 | +9.2pp, **p=0.004** |
+| 46 | 0.4 | +1.1pp, p=0.219 | +9.2pp, **p=0.004** |
+| **Significant (p<0.05)** | | **1/5 runs** | **5/5 runs** |
 
 **Result at 22x32:** the ensemble is still the best number in the project
 (77.4% ± 0.3%) and clearly beats SpectNet alone, but its edge over FBCSP
-alone is small (+1 to +2pp) and significant only for some train/val splits.
+alone is small (+1 to +2pp) and significant in only 1 of 5 train/val splits.
 "Significantly better than FBCSP" holds for the 22x128 run above, not
-robustly at 22x32. `w` is FBCSP's weight (SpectNet gets 1-w). The non-significant run is the
-one with the smallest w (0.4), i.e. the most weight on the weaker 32-bin CNN.
+robustly at 22x32. `w` is FBCSP's weight (SpectNet gets 1-w). The edge over FBCSP shrinks as
+w decreases, i.e. as more weight goes to the weaker 32-bin CNN; only the
+w=0.6 run is significant.
 
 ### 4. Data augmentation on ShallowConvNet (`src/p3_classification/cnn/augmentation.py`, `src/analysis/experiments/experiment_augmentation.py`)
 
@@ -1129,8 +1133,8 @@ overall: the FBCSP+SpectNet ensemble** (w chosen on a validation split, not
 on test - see "Follow-up Experiments" above): 78.7% ± 12.8% with the earlier
 SpectNet checkpoint, significantly ahead of FBCSP alone (p=0.027); **77.4% ±
 0.3% across 5 seeds with the current 22x32 checkpoint**, where the edge over
-FBCSP (+1 to +2pp) is significant only for some train/val splits (p=0.016 to
-p=0.219). The epsilon fix (see "Second
+FBCSP (+1 to +2pp) is significant in only 1 of 5 train/val splits (p=0.016
+to p=0.219). The epsilon fix (see "Second
 Diagnostic Finding") is what cost the CNN methods their individual edge —
 before it, pooled SpectNet reached 74.5%, essentially tying FBCSP; the hop
 fix (see "Third Diagnostic Finding") partially recovered that gap, and
@@ -1423,7 +1427,7 @@ in "Experiment 2" above.
     the test set, which was the original, flawed version of this
     experiment). With the current 22x32 SpectNet: **77.4% ± 0.3% across 5
     seeds**, clearly ahead of SpectNet alone (p=0.004) but only +1 to +2pp
-    over FBCSP alone, significant for some seeds only (p=0.016 to 0.219).
+    over FBCSP alone, significant in 1 of 5 seeds (p=0.016 to 0.219).
     With the earlier checkpoint: 78.7% ± 12.8%, significant vs. both
     (p=0.027 / p=0.008). The two methods appear to make at least
     partially independent errors — classical multi-band features and a

@@ -311,7 +311,7 @@ images, mean of 5 train/val seeds) — a weighted average of FBCSP's
 predict_proba and SpectNet pooled's softmax output, with the weight chosen on
 a validation split from sessions 1-3, not on the test set. It clearly beats
 SpectNet alone (paired Wilcoxon, p=0.004, n=9 subjects), but its edge over
-FBCSP alone is small (+1 to +2 pp) and significant only for some seeds
+FBCSP alone is small (+1 to +2 pp) and significant in only 1 of 5 seeds
 (p=0.016 to p=0.219). With the earlier SpectNet checkpoint it reached
 78.7% ± 12.8%, significantly ahead of both (p=0.027 and p=0.008). **Best single method:
 FBCSP+LDA at 75.9%**, consistent with the BCI-IV-2b literature for
