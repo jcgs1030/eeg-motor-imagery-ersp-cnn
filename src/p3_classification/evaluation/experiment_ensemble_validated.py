@@ -267,20 +267,26 @@ def main():
     print(f"  Ensemble          : {run_acc_ens.mean():.1%} ± {run_acc_ens.std():.1%}  "
           f"kappa={run_kappa_ens.mean():.3f} ± {run_kappa_ens.std():.3f}")
 
-    # Wilcoxon on the LAST run's per-subject rows, kept for continuity with the
-    # single-run version of this script - a significance test across only
-    # n_runs=5 run-level means would be underpowered to be meaningful.
-    last_rows = runs[-1]["rows"]
-    acc_fbcsp_last = np.array([r["acc_fbcsp"] for r in last_rows])
-    acc_cnn_last   = np.array([r["acc_cnn"]   for r in last_rows])
-    acc_ens_last   = np.array([r["acc_ens"]   for r in last_rows])
-    w_stat, w_p = wilcoxon(acc_ens_last, acc_fbcsp_last)
-    print(f"\n  Wilcoxon Ensemble vs. FBCSP+LDA alone (last run, seed={runs[-1]['seed']}): "
-          f"p={w_p:.3f} (mean diff={100*(acc_ens_last.mean()-acc_fbcsp_last.mean()):+.1f}pp)")
-    w_stat2, w_p2 = wilcoxon(acc_ens_last, acc_cnn_last)
-    print(f"  Wilcoxon Ensemble vs. SpectNet alone  (last run, seed={runs[-1]['seed']}): "
-          f"p={w_p2:.3f} (mean diff={100*(acc_ens_last.mean()-acc_cnn_last.mean()):+.1f}pp)")
-
+    # Paired Wilcoxon (per subject) for EVERY run, not just one: the chosen w
+    # can differ between seeds, and so can significance. A test across the
+    # n_runs run-level means would be underpowered, so each run is tested on
+    # its own per-subject rows and the results are reported side by side.
+    print(f"\n  == Paired Wilcoxon per run (n={len(args.subjects)} subjects each) ==")
+    print(f"  {'seed':>4}  {'w':>3}  {'vs. FBCSP+LDA':>18}  {'vs. SpectNet':>18}")
+    n_sig_fbcsp = n_sig_cnn = 0
+    for run in runs:
+        acc_fbcsp = np.array([r["acc_fbcsp"] for r in run["rows"]])
+        acc_cnn   = np.array([r["acc_cnn"]   for r in run["rows"]])
+        acc_ens   = np.array([r["acc_ens"]   for r in run["rows"]])
+        _, p_fbcsp = wilcoxon(acc_ens, acc_fbcsp)
+        _, p_cnn   = wilcoxon(acc_ens, acc_cnn)
+        n_sig_fbcsp += p_fbcsp < 0.05
+        n_sig_cnn   += p_cnn < 0.05
+        vs_fbcsp = f"{100*(acc_ens.mean()-acc_fbcsp.mean()):+.1f}pp, p={p_fbcsp:.3f}"
+        vs_cnn   = f"{100*(acc_ens.mean()-acc_cnn.mean()):+.1f}pp, p={p_cnn:.3f}"
+        print(f"  {run['seed']:>4}  {run['best_w']:.1f}  {vs_fbcsp:>18}  {vs_cnn:>18}")
+    print(f"  Significant at p<0.05: vs. FBCSP+LDA in {n_sig_fbcsp}/{len(runs)} runs, "
+          f"vs. SpectNet in {n_sig_cnn}/{len(runs)} runs")
 
 if __name__ == "__main__":
     main()

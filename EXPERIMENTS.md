@@ -627,7 +627,7 @@ Validation accuracy by weight (sessions 1-3 only, test set untouched):
 |---|---|---|---|---|
 | **Ensemble, w=0.5 (chosen on validation)** | **78.7% ± 12.8%** | **0.574** | **p=0.027** | **p=0.008** |
 
-**This is now the official result: 78.7% ± 12.8%, w=0.5, chosen honestly.**
+**This was the official result with the earlier SpectNet checkpoint: 78.7% ± 12.8%, w=0.5, chosen honestly** (superseded for 22x32 images - see "Rerun with the 22x32 SpectNet checkpoint" below).
 It happens to be almost identical to the old, improperly-selected 78.8%
 (w=0.6) - which is reassuring evidence that the ensemble's benefit is real
 and not an artifact of tuning against the test set, but the selection
@@ -642,6 +642,46 @@ for early stopping only - so it has technically already seen T-val trials
 during its own training. Retraining SpectNet with a clean 3-way split is out
 of scope here; this fix addresses specifically the ensemble-weight-selection
 leakage the advisor flagged, not a from-scratch re-run of the CNN itself.
+
+#### Rerun with the 22x32 SpectNet checkpoint (current)
+
+The 78.7% above cannot be reproduced with the current `results/spectnet_all.pth`
+(22x32 images, 68.0% pooled): with the same `seed=42` the procedure now picks
+w=0.6 and gives 78.0%. It was computed with an earlier SpectNet pooled
+checkpoint, most likely the 22x128 one (71.7%). Rerun with the default 5
+train/val seeds (FBCSP and SpectNet are deterministic here; only the T-val
+split, and therefore w, changes):
+
+| Seed | w (chosen on validation) | Ensemble (test) | Kappa |
+|---|---|---|---|
+| 42 | 0.6 | 78.0% ± 12.7% | 0.559 |
+| 43 | 0.5 | 77.4% ± 12.9% | 0.549 |
+| 44 | 0.5 | 77.4% ± 12.9% | 0.549 |
+| 45 | 0.4 | 77.1% ± 12.9% | 0.541 |
+| 46 | 0.4 | 77.1% ± 12.9% | 0.541 |
+| **Mean across 5 runs** | — | **77.4% ± 0.3%** | **0.548 ± 0.007** |
+
+FBCSP+LDA alone: 75.9%; SpectNet pooled alone: 67.8% (mean of per-subject
+accuracies; 68.0% is the accuracy over all pooled trials).
+
+Paired Wilcoxon (n=9 subjects), computed for every run:
+
+| Seed | w | vs. FBCSP alone | vs. SpectNet alone |
+|---|---|---|---|
+| 42 | 0.6 | +2.0pp, **p=0.016** | +10.1pp, **p=0.004** |
+| 43 | 0.5 | +1.5pp, p=0.070 | +9.6pp, **p=0.004** |
+| 44 | 0.5 | +1.5pp, p=0.070 | +9.6pp, **p=0.004** |
+| 45 | 0.4 | +1.1pp, p=0.219 | +9.2pp, **p=0.004** |
+| 46 | 0.4 | +1.1pp, p=0.219 | +9.2pp, **p=0.004** |
+| **Significant (p<0.05)** | | **1/5 runs** | **5/5 runs** |
+
+**Result at 22x32:** the ensemble is still the best number in the project
+(77.4% ± 0.3%) and clearly beats SpectNet alone, but its edge over FBCSP
+alone is small (+1 to +2pp) and significant in only 1 of 5 train/val splits.
+"Significantly better than FBCSP" holds for the 22x128 run above, not
+robustly at 22x32. `w` is FBCSP's weight (SpectNet gets 1-w). The edge over FBCSP shrinks as
+w decreases, i.e. as more weight goes to the weaker 32-bin CNN; only the
+w=0.6 run is significant.
 
 ### 4. Data augmentation on ShallowConvNet (`src/p3_classification/cnn/augmentation.py`, `src/analysis/experiments/experiment_augmentation.py`)
 
@@ -1062,11 +1102,15 @@ methods (Experiment 1-2) reflect **all three** ERSP fixes — baseline-window,
 epsilon, and STFT hop (see the three "Diagnostic Finding" sections above).
 Metric: accuracy across sessions 4-5 (evaluation); Experiments 2-5b are
 mean ± std across 9 subjects (subject-specific protocol); Experiment 1 is a
-single pooled model, no std to report.
+single pooled model, no std to report. The 22x32 ensemble row is mean ± std
+across 5 train/val seeds (each already a mean across 9 subjects). CNN rows
+(Exp 1-2) are the 22x128 results; the 22x32 numbers are in "Experiment 1"
+and "Experiment 2" above.
 
 | Method | Exp | Accuracy | F1-score | Kappa |
 |---|---|---|---|---|
-| **Ensemble: FBCSP+LDA + SpectNet (w=0.5, chosen on validation)** | **follow-up** | **78.7% ± 12.8%** | — | **0.574** |
+| **Ensemble: FBCSP+LDA + SpectNet, 22x32 (w chosen on validation, mean of 5 seeds)** | **follow-up** | **77.4% ± 0.3%** | — | **0.548** |
+| Ensemble: FBCSP+LDA + SpectNet, earlier checkpoint (w=0.5, seed 42) | follow-up | 78.7% ± 12.8% | — | 0.574 |
 | FBCSP+LDA | 5a | 75.9% ± 13.4% | 75.5% ± 13.7% | 0.519 |
 | FBCSP+SVM | 5a | 73.6% ± 13.5% | 72.7% ± 14.5% | 0.472 |
 | Riem-TS+LDA | 5b | 72.9% ± 13.4% | 72.0% ± 13.9% | 0.459 |
@@ -1085,10 +1129,12 @@ single pooled model, no std to report.
 **Best single method: FBCSP+LDA at 75.9% mean accuracy (Kappa 0.519)**, still
 clearly ahead of every individual ERSP+CNN method even after the hop fix
 recovered some ground for SpectNet pooled (70.0%→71.7%). **Best result
-overall: the FBCSP+SpectNet ensemble at 78.7% ± 12.8%** (w=0.5, chosen on a
-validation split, not on test - see "Follow-up Experiments" above) — the
-only method found in this project that significantly beats FBCSP alone
-(p=0.027). The epsilon fix (see "Second
+overall: the FBCSP+SpectNet ensemble** (w chosen on a validation split, not
+on test - see "Follow-up Experiments" above): 78.7% ± 12.8% with the earlier
+SpectNet checkpoint, significantly ahead of FBCSP alone (p=0.027); **77.4% ±
+0.3% across 5 seeds with the current 22x32 checkpoint**, where the edge over
+FBCSP (+1 to +2pp) is significant in only 1 of 5 train/val splits (p=0.016
+to p=0.219). The epsilon fix (see "Second
 Diagnostic Finding") is what cost the CNN methods their individual edge —
 before it, pooled SpectNet reached 74.5%, essentially tying FBCSP; the hop
 fix (see "Third Diagnostic Finding") partially recovered that gap, and
@@ -1376,11 +1422,14 @@ in "Experiment 2" above.
     SpectNet (p=0.91). See "Follow-up Experiments" above.
 
 11. **Ensembling FBCSP+LDA with SpectNet pooled gives the best result in the
-    project: 78.7% ± 12.8%** (weighted average of predict_proba/softmax,
-    w=0.5, chosen on a validation split carved out of sessions 1-3 - not by
-    sweeping against the test set, which was the original, flawed version
-    of this experiment), significantly ahead of FBCSP alone (p=0.027) and
-    SpectNet alone (p=0.008). The two methods appear to make at least
+    project** (weighted average of predict_proba/softmax, weight chosen on a
+    validation split carved out of sessions 1-3 - not by sweeping against
+    the test set, which was the original, flawed version of this
+    experiment). With the current 22x32 SpectNet: **77.4% ± 0.3% across 5
+    seeds**, clearly ahead of SpectNet alone (p=0.004) but only +1 to +2pp
+    over FBCSP alone, significant in 1 of 5 seeds (p=0.016 to 0.219).
+    With the earlier checkpoint: 78.7% ± 12.8%, significant vs. both
+    (p=0.027 / p=0.008). The two methods appear to make at least
     partially independent errors — classical multi-band features and a
     full time-frequency CNN are complementary, not redundant, on this task.
 
