@@ -306,11 +306,14 @@ lower on 7 of 9 subjects), EEGNet −0.4 pp (p = 0.734), ShallowConvNet +0.3 pp
 
 ### Key Finding
 
-**Best result: an FBCSP+LDA / SpectNet ensemble at 78.7% ± 12.8%** — a
-weighted average of FBCSP's predict_proba and SpectNet pooled's softmax
-output (weight chosen on a validation split from sessions 1-3, not on the
-test set), significantly ahead of either method alone (paired Wilcoxon,
-p=0.027 and p=0.008 respectively; n=9 subjects). **Best single method:
+**Best result: an FBCSP+LDA / SpectNet ensemble at 77.4% ± 0.3%** (22 × 32
+images, mean of 5 train/val seeds) — a weighted average of FBCSP's
+predict_proba and SpectNet pooled's softmax output, with the weight chosen on
+a validation split from sessions 1-3, not on the test set. It clearly beats
+SpectNet alone (paired Wilcoxon, p=0.004, n=9 subjects), but its edge over
+FBCSP alone is small (+1 to +2 pp) and significant only for some seeds
+(p=0.016 to p=0.219). With the earlier SpectNet checkpoint it reached
+78.7% ± 12.8%, significantly ahead of both (p=0.027 and p=0.008). **Best single method:
 FBCSP+LDA at 75.9%**, consistent with the BCI-IV-2b literature for
 3-channel classifiers and still ahead of every individual ERSP+CNN method
 (best CNN: SpectNet pooled, 71.7% with 22 × 128 images; with the current 22 × 32 images the best pooled CNN is EEGNet at 69.6%). All three ERSP fixes were worth applying
