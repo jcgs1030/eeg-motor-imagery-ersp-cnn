@@ -11,10 +11,10 @@ This script selects w on a VALIDATION split carved out of the TRAINING
 sessions (1-3) instead, and evaluates the final, fixed ensemble on the test
 set exactly once.
 
-Per subject:
+Per subject, per run:
   1. Split sessions 1-3 (T) into T-train / T-val (stratified, test_size=
-     VAL_SPLIT, seed=RANDOM_SEED) - same split fraction/seed convention used
-     for CNN training elsewhere in the project.
+     VAL_SPLIT, seed=<this run's seed>) - same split fraction/seed convention
+     used for CNN training elsewhere in the project.
   2. Fit FBCSP+LDA on T-train only.
   3. Evaluate FBCSP+LDA and SpectNet pooled (existing frozen checkpoint) on
      T-val -> sweep w, pick the value that maximises MEAN validation
@@ -24,19 +24,31 @@ Per subject:
      once a hyperparameter has been chosen on a held-out slice: use all
      available training data for the model that will actually be tested.
   5. Evaluate the ensemble at the CHOSEN w on E (test, sessions 4-5) once.
-     This is the number that should be reported from now on.
+
+The whole thing (steps 1-5) is repeated for N_RUNS different seeds, per the
+advisor's request for statistical robustness. Only the T-train/T-val split
+is randomised across runs - E (test, sessions 4-5) is loaded fresh every
+run via load_full_and_fbcsp_arrays(subj, "E"), which involves no split at
+all, so it is byte-identical across all runs and is never touched by any
+run's seed. The final number is reported as mean +/- std ACROSS RUNS (on
+top of the existing mean +/- std across subjects within each run), so both
+sources of variability are visible separately.
 
 Caveat (documented, not fixed here): SpectNet pooled's own checkpoint
 (results/spectnet_all.pth) was trained before this validation split existed,
 on the full T data (with its own internal, different 15% val split used
 only for early stopping) - so it has technically seen T-val trials during
-its own training. Retraining SpectNet with a clean 3-way split is out of
-scope for this fix; what this script addresses is specifically the
-weight-selection leakage.
+its own training. Retraining SpectNet with a clean 3-way split per run is
+out of scope here (scoped explicitly as a lighter re-run: only the ensemble
+weight selection is repeated across seeds, SpectNet itself is kept fixed);
+what this script addresses is specifically the weight-selection leakage,
+now checked for robustness across 5 independent train/val splits.
 
 Usage:
     python src/experiment_ensemble_validated.py
     python src/experiment_ensemble_validated.py --weights 0.3 0.4 0.5 0.6 0.7 0.8
+    python src/experiment_ensemble_validated.py --n_runs 5
+    python src/experiment_ensemble_validated.py --seeds 42 43 44 45 46
 """
 
 import argparse
@@ -95,10 +107,15 @@ def cnn_proba_from_full_epochs(X_full: np.ndarray, model) -> np.ndarray:
     return softmax(logits)
 
 
-def select_weight_on_validation(subjects: list, weights: list, spectnet_model) -> tuple[float, dict]:
+def select_weight_on_validation(subjects: list, weights: list, spectnet_model,
+                                seed: int) -> tuple[float, dict]:
     """Returns (best_w, per_subject_val_data) where per_subject_val_data
     holds everything needed later to refit FBCSP on full T and to report
-    validation accuracy per weight, per subject."""
+    validation accuracy per weight, per subject.
+
+    seed controls ONLY the T-train/T-val split below - it never touches E
+    (test), which is loaded separately in evaluate_on_test() with no split
+    at all."""
     val_acc_by_w = {w: [] for w in weights}
     per_subject_val_data = {}
 
@@ -106,7 +123,7 @@ def select_weight_on_validation(subjects: list, weights: list, spectnet_model) -
         X_full, X_fbcsp, y = load_full_and_fbcsp_arrays(subj, "T")
         idx = np.arange(len(y))
         idx_train, idx_val = train_test_split(
-            idx, test_size=VAL_SPLIT, stratify=y, random_state=RANDOM_SEED
+            idx, test_size=VAL_SPLIT, stratify=y, random_state=seed
         )
 
         # FBCSP fit on T-train only
@@ -179,13 +196,44 @@ def evaluate_on_test(subjects: list, best_w: float, per_subject_val_data: dict,
     return rows
 
 
+def run_once(subjects: list, weights: list, spectnet_model, seed: int) -> dict:
+    """Runs the full validation-weight-selection + test-evaluation procedure
+    once, for one T-train/T-val seed. Returns a dict with the chosen w and
+    the per-subject test rows for this run."""
+    print(f"\n-- Run seed={seed} --")
+    print("  Step 1: selecting w on validation (sessions 1-3 only, test set untouched)")
+    best_w, per_subject_val_data = select_weight_on_validation(
+        subjects, weights, spectnet_model, seed=seed
+    )
+    print(f"    Chosen weight: w={best_w:.1f}")
+
+    print("  Step 2: refitting FBCSP on full T, evaluating ensemble on E (test) ONCE")
+    rows = evaluate_on_test(subjects, best_w, per_subject_val_data, spectnet_model)
+
+    acc_ens = np.array([r["acc_ens"] for r in rows])
+    print(f"    Ensemble test accuracy this run: {acc_ens.mean():.1%} ± {acc_ens.std():.1%} "
+          f"(across {len(subjects)} subjects)")
+
+    return {"seed": seed, "best_w": best_w, "rows": rows}
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="FBCSP+LDA / SpectNet ensemble with weight chosen on validation, not test"
     )
     parser.add_argument("--subjects", type=int, nargs="+", default=SUBJECTS)
     parser.add_argument("--weights", type=float, nargs="+", default=DEFAULT_WEIGHTS)
+    parser.add_argument("--n_runs", type=int, default=5,
+                        help="Number of T-train/T-val splits to repeat, each with a "
+                             "different seed, for statistical robustness. Test set "
+                             "(sessions 4-5) is never re-split, regardless of n_runs.")
+    parser.add_argument("--seeds", type=int, nargs="+", default=None,
+                        help="Explicit list of seeds to use instead of "
+                             "RANDOM_SEED..RANDOM_SEED+n_runs-1.")
     args = parser.parse_args()
+
+    seeds = args.seeds if args.seeds is not None else \
+        [RANDOM_SEED + i for i in range(args.n_runs)]
 
     ckpt = torch.load("results/spectnet_all.pth", map_location="cpu", weights_only=False)
     spectnet_model = get_model("spectnet", n_channels=N_CHANNELS, n_freq=IMG_FREQ_BINS,
@@ -193,36 +241,49 @@ def main():
     spectnet_model.load_state_dict(ckpt["state_dict"])
     spectnet_model.eval()
 
-    print("== Step 1: selecting w on validation (sessions 1-3 only, test set untouched) ==")
-    best_w, per_subject_val_data = select_weight_on_validation(
-        args.subjects, args.weights, spectnet_model
-    )
-    print(f"\n  Chosen weight: w={best_w:.1f}")
+    runs = [run_once(args.subjects, args.weights, spectnet_model, seed) for seed in seeds]
 
-    print("\n== Step 2: refitting FBCSP on full T, evaluating ensemble on E (test) ONCE ==")
-    rows = evaluate_on_test(args.subjects, best_w, per_subject_val_data, spectnet_model)
+    print(f"\n{'='*60}\n  Per-run summary ({len(runs)} runs, test set identical across all)\n{'='*60}")
+    run_acc_fbcsp, run_acc_cnn, run_acc_ens, run_kappa_ens = [], [], [], []
+    for run in runs:
+        acc_fbcsp = np.array([r["acc_fbcsp"] for r in run["rows"]])
+        acc_cnn   = np.array([r["acc_cnn"]   for r in run["rows"]])
+        acc_ens   = np.array([r["acc_ens"]   for r in run["rows"]])
+        kappa_ens = np.array([r["kappa_ens"] for r in run["rows"]])
+        print(f"  seed={run['seed']:>4}  w={run['best_w']:.1f}  "
+              f"FBCSP={acc_fbcsp.mean():.1%}  SpectNet={acc_cnn.mean():.1%}  "
+              f"Ensemble={acc_ens.mean():.1%} ± {acc_ens.std():.1%} (across subjects)  "
+              f"kappa={kappa_ens.mean():.3f}")
+        run_acc_fbcsp.append(acc_fbcsp.mean())
+        run_acc_cnn.append(acc_cnn.mean())
+        run_acc_ens.append(acc_ens.mean())
+        run_kappa_ens.append(kappa_ens.mean())
 
-    for row in rows:
-        print(f"  S{row['subject']:02d}: FBCSP={row['acc_fbcsp']:.1%}  "
-              f"SpectNet={row['acc_cnn']:.1%}  Ensemble={row['acc_ens']:.1%}")
+    run_acc_fbcsp = np.array(run_acc_fbcsp)
+    run_acc_cnn   = np.array(run_acc_cnn)
+    run_acc_ens   = np.array(run_acc_ens)
+    run_kappa_ens = np.array(run_kappa_ens)
 
-    acc_fbcsp = np.array([r["acc_fbcsp"] for r in rows])
-    acc_cnn   = np.array([r["acc_cnn"] for r in rows])
-    acc_ens   = np.array([r["acc_ens"] for r in rows])
-    kappa_ens = np.array([r["kappa_ens"] for r in rows])
+    print(f"\n  == Final test-set summary, mean ± std ACROSS {len(runs)} RUNS "
+          f"(each run's own number is already a mean across {len(args.subjects)} subjects) ==")
+    print(f"  FBCSP+LDA         : {run_acc_fbcsp.mean():.1%} ± {run_acc_fbcsp.std():.1%}")
+    print(f"  SpectNet (pooled) : {run_acc_cnn.mean():.1%} ± {run_acc_cnn.std():.1%}")
+    print(f"  Ensemble          : {run_acc_ens.mean():.1%} ± {run_acc_ens.std():.1%}  "
+          f"kappa={run_kappa_ens.mean():.3f} ± {run_kappa_ens.std():.3f}")
 
-    print(f"\n  == Final test-set summary (w={best_w:.1f}, chosen on validation) ==")
-    print(f"  FBCSP+LDA         : {acc_fbcsp.mean():.1%} ± {acc_fbcsp.std():.1%}")
-    print(f"  SpectNet (pooled) : {acc_cnn.mean():.1%} ± {acc_cnn.std():.1%}")
-    print(f"  Ensemble (w={best_w:.1f})  : {acc_ens.mean():.1%} ± {acc_ens.std():.1%}  "
-          f"kappa={kappa_ens.mean():.3f}")
-
-    w_stat, w_p = wilcoxon(acc_ens, acc_fbcsp)
-    print(f"\n  Wilcoxon Ensemble vs. FBCSP+LDA alone: p={w_p:.3f} "
-          f"(mean diff={100*(acc_ens.mean()-acc_fbcsp.mean()):+.1f}pp)")
-    w_stat2, w_p2 = wilcoxon(acc_ens, acc_cnn)
-    print(f"  Wilcoxon Ensemble vs. SpectNet alone : p={w_p2:.3f} "
-          f"(mean diff={100*(acc_ens.mean()-acc_cnn.mean()):+.1f}pp)")
+    # Wilcoxon on the LAST run's per-subject rows, kept for continuity with the
+    # single-run version of this script - a significance test across only
+    # n_runs=5 run-level means would be underpowered to be meaningful.
+    last_rows = runs[-1]["rows"]
+    acc_fbcsp_last = np.array([r["acc_fbcsp"] for r in last_rows])
+    acc_cnn_last   = np.array([r["acc_cnn"]   for r in last_rows])
+    acc_ens_last   = np.array([r["acc_ens"]   for r in last_rows])
+    w_stat, w_p = wilcoxon(acc_ens_last, acc_fbcsp_last)
+    print(f"\n  Wilcoxon Ensemble vs. FBCSP+LDA alone (last run, seed={runs[-1]['seed']}): "
+          f"p={w_p:.3f} (mean diff={100*(acc_ens_last.mean()-acc_fbcsp_last.mean()):+.1f}pp)")
+    w_stat2, w_p2 = wilcoxon(acc_ens_last, acc_cnn_last)
+    print(f"  Wilcoxon Ensemble vs. SpectNet alone  (last run, seed={runs[-1]['seed']}): "
+          f"p={w_p2:.3f} (mean diff={100*(acc_ens_last.mean()-acc_cnn_last.mean()):+.1f}pp)")
 
 
 if __name__ == "__main__":

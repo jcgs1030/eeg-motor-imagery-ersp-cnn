@@ -819,12 +819,36 @@ One model trained per (architecture, subject) pair using only that subject's
 own sessions 1–3. Evaluated on that subject's sessions 4–5.
 This is the standard intra-subject protocol in the BCI literature.
 
-### Results (mean ± std across 9 subjects) — **current, post all three fixes**
+### Results (mean ± std across 9 subjects) — **current: 22x32 ERSP images, post all three fixes**
+
+| Model | Accuracy | F1-score | Kappa | Parameters |
+|---|---|---|---|---|
+| EEGNet | 68.6% ± 12.2% | 66.6% ± 16.1% | 0.372 ± 0.243 | 6,098 |
+| ShallowConvNet | **54.8% ± 7.4%** | 53.3% ± 8.4% | **0.096 ± 0.148** | 36,242 |
+| SpectNet | 69.5% ± 12.9% | 69.1% ± 13.3% | 0.390 ± 0.259 | 88,050 |
+
+Retrained after `IMG_TIME_BINS` dropped from 128 to 32 (see "ERSP
+Resolution / Blur Sweep" below). ShallowConvNet's temporal kernel/pool
+lengths now scale with `n_time` (25/75/15 at 128 bins -> 6/19/4 at 32).
+Paired comparison vs. 128 bins (Wilcoxon, n=9):
+
+| Model | Δ accuracy (mean) | p | Subjects lower at 32 bins |
+|---|---|---|---|
+| SpectNet | −1.3pp | 0.074 | 7/9 |
+| EEGNet | −0.4pp | 0.734 | 4/9 |
+| ShallowConvNet | +0.3pp | 1.000 | 5/9 |
+
+No difference is significant, but SpectNet's drop is consistent across
+subjects (−0.3 to −3.8pp on 7/9) - a trend, not "no effect" - in exchange
+for ~7x fewer parameters. EEGNet S02 collapses to a single class (50.0%,
+kappa 0, best epoch 1); it was already near chance at 128 bins.
+
+128 time bins, post all three fixes (kept for the record):
 
 | Model | Accuracy | F1-score | Kappa |
 |---|---|---|---|
 | EEGNet | 69.0% ± 11.6% | 68.5% ± 12.0% | 0.379 ± 0.232 |
-| ShallowConvNet | **54.5% ± 6.9%** | 52.6% ± 8.6% | **0.090 ± 0.138** |
+| ShallowConvNet | 54.5% ± 6.9% | 52.6% ± 8.6% | 0.090 ± 0.138 |
 | SpectNet | 70.8% ± 13.1% | 68.7% ± 17.0% | 0.416 ± 0.261 |
 
 After baseline-window + epsilon fixes but before the hop fix (kept for the
@@ -1225,6 +1249,48 @@ CPU-constrained setup could not run.
 
 ---
 
+## ERSP Resolution / Blur Sweep (`src/experiment_resolution_sweep.py`)
+
+Per advisor request: shrink the per-trial ERSP image and check whether a
+Gaussian anti-aliasing blur before downsampling helps. SpectNet trained
+from scratch for each (time bins, sigma) combination, pooled over subjects
+1, 3, 4, 6, evaluated on their sessions 4-5. The frequency axis (22 bins,
+8-30Hz) is never resized.
+
+The first run of this sweep applied the blur with a scalar sigma, which
+blurred the frequency axis too, smearing mu/beta across neighbouring bins.
+That made its blur rows a frequency-smear test, not anti-aliasing. Fixed in
+`ersp.py` (`gaussian_filter(..., sigma=(0, sigma))`) and rerun; the
+unblurred 128- and 32-bin rows reproduce the first run exactly (70.0% and
+69.4%), confirming only the blurred combinations changed.
+
+| Time bins | Sigma | KB/trial | Accuracy | Kappa |
+|---|---|---|---|---|
+| 128 | 0.0 | 33.0 | **70.0%** | 0.400 |
+| 128 | 0.5 | 33.0 | 69.9% | 0.398 |
+| 128 | 1.0 | 33.0 | 68.6% | 0.371 |
+| 64 | 0.0 | 16.5 | 69.0% | 0.381 |
+| 64 | 0.5 | 16.5 | 69.8% | 0.396 |
+| 64 | 1.0 | 16.5 | 69.7% | 0.395 |
+| 32 | 0.0 | 8.2 | 69.4% | 0.387 |
+| 32 | 0.5 | 8.2 | 69.5% | 0.390 |
+| 32 | 1.0 | 8.2 | 66.6% | 0.332 |
+
+**Result:** 32 time bins (no blur) is within 0.6pp of 128 at a quarter of
+the size, and became the production `IMG_TIME_BINS`. Time-only blur never
+helps by more than 0.8pp (64 bins, sigma=0.5), and sigma=1.0 hurts at 128
+and 32 bins - it washes out the ERD/ERS time course. No blur in production.
+
+**Caveat:** the sweep selects on sessions 4-5, the same set every final
+number is reported on, so the choice of 32 bins is mildly tuned on test.
+The differences between the top combinations (≤1pp) are small enough that
+this is unlikely to change the conclusion, but a clean version would select
+on a validation split from sessions 1-3, as `experiment_ensemble_validated.py`
+does for the ensemble weight. The subject-specific retraining at 32 bins is
+in "Experiment 2" above.
+
+---
+
 ## Key Findings
 
 1. **Evaluation labels were broken (critical bug):** The GDF evaluation files contain
@@ -1309,6 +1375,12 @@ CPU-constrained setup could not run.
     modest, non-significant improvement** (54.5%→56.3%, p=0.156, n=9) —
     promising direction, not a fix on its own. The architecture's
     square→log nonlinearity remains the leading unconfirmed hypothesis.
+
+13. **ERSP images were cut from 22x128 to 22x32 with no significant loss**
+    (pooled sweep: 69.4% vs. 70.0%; subject-specific SpectNet 69.5% vs.
+    70.8%, p=0.074, n=9), 4x smaller per trial and ~7x fewer SpectNet
+    parameters. A time-only anti-aliasing blur does not help. The 32-bin
+    choice was made on the test sessions - see "ERSP Resolution / Blur Sweep".
 
 ---
 
