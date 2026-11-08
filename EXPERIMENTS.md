@@ -734,8 +734,23 @@ for the full cohort. Two variants: subject 1 only, and all 9 subjects.
 
 ### Results
 
-**Current (post baseline-window + epsilon + hop fixes — see the three
-"Diagnostic Finding" sections above):**
+**Current: 22x32 ERSP images** (all three pooled models retrained after
+`IMG_TIME_BINS` dropped from 128 to 32; `src/p3_classification/evaluation/evaluate.py`):
+
+| Model | Subjects | Accuracy | Precision | Recall | F1-score | Kappa | Parameters |
+|---|---|---|---|---|---|---|---|
+| **EEGNet** | **all (9)** | **69.6%** | 69.6% | 69.6% | 69.6% | **0.393** | 6,098 |
+| ShallowConvNet | all (9) | 59.3% | 59.3% | 59.3% | 59.2% | 0.186 | 36,242 |
+| SpectNet | all (9) | 68.0% | 68.0% | 68.0% | 68.0% | 0.360 | 88,050 |
+
+EEGNet (−0.4pp) and ShallowConvNet (−1.0pp) are essentially unchanged.
+SpectNet pooled drops 3.7pp (71.7% -> 68.0%), more than its subject-specific
+drop (−1.3pp, see Experiment 2), and is no longer the best pooled CNN. A
+single pooled run has no per-subject pairing here, so this is not tested for
+significance. Single-subject (S01) models were not retrained.
+
+22x128 images, post baseline-window + epsilon + hop fixes (kept for the
+record — see the three "Diagnostic Finding" sections above):
 
 | Model | Subjects | Accuracy | Precision | Recall | F1-score | Kappa |
 |---|---|---|---|---|---|---|

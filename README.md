@@ -242,15 +242,15 @@ Full experimental narrative and per-experiment analysis in [`EXPERIMENTS.md`](EX
 
 ### Experiment 1 — CNN Subject-Pooled
 
-| Model | Test accuracy, 22 × 128 images | Current checkpoint, 22 × 32 images |
-|---|---|---|
-| EEGNet | 70.0% | not retrained yet (checkpoint is still 22 × 128) |
-| ShallowConvNet | 60.3% | 59.3% |
-| **SpectNet** | **71.7%** | 68.0% |
+| Model | 22 × 128 images | **22 × 32 images (current)** | Kappa (22 × 32) |
+|---|---|---|---|
+| EEGNet | 70.0% | **69.6%** | 0.393 |
+| ShallowConvNet | 60.3% | 59.3% | 0.186 |
+| SpectNet | **71.7%** | 68.0% | 0.360 |
 
-The 22 × 128 column is the documented result in `EXPERIMENTS.md`. The pooled
-checkpoints for SpectNet and ShallowConvNet were retrained after the switch to
-32 time bins; the right column is the test accuracy stored in each checkpoint.
+All three pooled models were retrained after the switch to 32 time bins
+(`uv run evaluate`). EEGNet and ShallowConvNet barely change; SpectNet pooled
+loses 3.7 pp, more than in the subject-specific setting (−1.3 pp).
 
 Three independent ERSP bugs were found and fixed here (see "Known
 Methodological Findings" below): a too-short baseline window, a numerical
@@ -313,7 +313,7 @@ test set), significantly ahead of either method alone (paired Wilcoxon,
 p=0.027 and p=0.008 respectively; n=9 subjects). **Best single method:
 FBCSP+LDA at 75.9%**, consistent with the BCI-IV-2b literature for
 3-channel classifiers and still ahead of every individual ERSP+CNN method
-(best CNN: SpectNet pooled, 71.7% with 22 × 128 images). All three ERSP fixes were worth applying
+(best CNN: SpectNet pooled, 71.7% with 22 × 128 images; with the current 22 × 32 images the best pooled CNN is EEGNet at 69.6%). All three ERSP fixes were worth applying
 for scientific correctness, but only the hop fix gave a CNN method a boost on
 its own — see "Known Methodological Findings" below. High inter-subject
 variance (±12–16%) reflects genuine differences in individual EEG motor
