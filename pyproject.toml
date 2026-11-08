@@ -23,10 +23,10 @@ dependencies = [
 ]
 
 [project.scripts]
-preprocess = "src.preprocessing:main"
-ersp       = "src.ersp:main"
-train      = "src.train:main"
-evaluate   = "src.evaluate:main"
+preprocess = "src.p1_preprocessing.preprocessing:main"
+ersp       = "src.p2_ersp.ersp:main"
+train      = "src.p3_classification.cnn.train:main"
+evaluate   = "src.p3_classification.evaluation.evaluate:main"
 
 [tool.uv]
 dev-dependencies = [

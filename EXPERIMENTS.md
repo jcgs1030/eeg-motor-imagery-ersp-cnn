@@ -33,12 +33,12 @@ filtering, and feature extraction were all correct — only the evaluation label
 
 ### Fix applied (this session)
 
-- **`src/eval_labels.py`** — retrieves the true evaluation labels from MOABB
+- **`src/p1_preprocessing/eval_labels.py`** — retrieves the true evaluation labels from MOABB
   (`BNCI2014_004`), which bundles the official competition labels. Labels are cached to
   `data/processed/eval_labels.npz` (one download, then local cache).
 - **`src/config.py`** — removed the incorrect `781→left, 783→right` mapping. Added
   `EVENT_CUE_EVAL = 783` (used for epoch alignment only; class is assigned externally).
-- **`src/preprocessing.py`** — new `extract_epochs_eval()` function: aligns evaluation
+- **`src/p1_preprocessing/preprocessing.py`** — new `extract_epochs_eval()` function: aligns evaluation
   epochs to event `783` (the actual cue onset), then assigns the MOABB labels in
   chronological order, using `epochs.selection` to account for any artifact-rejected trials.
 - All data regenerated: `S0xE-epo.fif`, `S0xE-ersp.npz`, all results CSVs and figures.
@@ -49,7 +49,7 @@ filtering, and feature extraction were all correct — only the evaluation label
 
 ## Preprocessing Pipeline (all experiments)
 
-**Script:** `src/preprocessing.py`
+**Script:** `src/p1_preprocessing/preprocessing.py`
 
 | Step | Parameter | Value |
 |---|---|---|
@@ -68,7 +68,7 @@ double-baselining that distorted the power reference. It was removed (`baseline=
 
 ## Representation: ERSP Spectrograms
 
-**Script:** `src/ersp.py`
+**Script:** `src/p2_ersp/ersp.py`
 
 ERSP (Event-Related Spectral Perturbation) quantifies the change in spectral power
 relative to a pre-stimulus baseline:
@@ -106,7 +106,7 @@ After the fix, 0.5 = no change, < 0.5 = ERD (desynchronisation), > 0.5 = ERS.
 ### Root cause
 
 `STFT_WIN_LEN = 256` samples (1.024 s at 250 Hz) is **longer** than the baseline
-window `BASELINE = (-0.5, 0.0)` (0.5 s). Since `compute_ersp_image()` (`src/ersp.py`)
+window `BASELINE = (-0.5, 0.0)` (0.5 s). Since `compute_ersp_image()` (`src/p2_ersp/ersp.py`)
 estimates the baseline reference power by reusing STFT frames from the trial's own
 STFT, every "baseline" frame already leaks signal from **after** the cue:
 
@@ -120,7 +120,7 @@ a pure pre-stimulus reference. This does not change the shape of the data (still
 `(3, 22, 128)` per trial), but it biases the ERSP normalisation and visually flattens
 the ERD/ERS contrast in any grand-average plot.
 
-### Evidence (`src/verify_timeline.py`, `src/diagnostic_fixed_baseline.py`, `src/diagnostic_extended_baseline.py`)
+### Evidence (`src/p1_preprocessing/verify_timeline.py`, `src/analysis/diagnostics/diagnostic_fixed_baseline.py`, `src/analysis/diagnostics/diagnostic_extended_baseline.py`)
 
 - `verify_timeline.py` confirmed empirically (45/45 GDF files, std = 0.0000) that the
   trial start-to-cue interval is exactly **3.000 s**, i.e. sessions 1–3 have 3 full
@@ -216,7 +216,7 @@ see its Results table below), consistent with this hypothesis: a subject-specifi
 model was less dependent on the artefact to begin with, so removing it had less
 room to help.
 
-### STFT vs. Wavelet transform (`src/ersp.py: compute_ersp_image_wavelet`, `plot_stft_vs_wavelet`)
+### STFT vs. Wavelet transform (`src/p2_ersp/ersp.py: compute_ersp_image_wavelet`, `plot_stft_vs_wavelet`)
 
 As a related methodological check, a Morlet continuous-wavelet-transform version of
 the ERSP was implemented for side-by-side comparison (`results/figures/stft_vs_wavelet_*.png`,
@@ -259,7 +259,7 @@ comparison, just not as "proof you need wavelet to see this."
 
 ## Second Diagnostic Finding — ERSP Epsilon Bias (fixed and reprocessed)
 
-> **Status: APPLIED.** `src/ersp.py`'s `compute_ersp_image()` and
+> **Status: APPLIED.** `src/p2_ersp/ersp.py`'s `compute_ersp_image()` and
 > `compute_ersp_image_wavelet()` were fixed, all ERSP tensors were regenerated
 > again, and Experiments 1-2 (the only ones that consume ERSP tensors) were
 > re-run a second time. This is a second, independent bug from the baseline-window
@@ -303,7 +303,7 @@ plausible range:
 ### Fix applied
 
 `eps = power.max() * 1e-12` replaces the fixed `1e-12` in both
-`compute_ersp_image()` and `compute_ersp_image_wavelet()` (`src/ersp.py`). The
+`compute_ersp_image()` and `compute_ersp_image_wavelet()` (`src/p2_ersp/ersp.py`). The
 ±6 dB clip and [0,1] scaling in the output format are unchanged — with the
 epsilon fixed, ±6 dB now genuinely covers the bulk of the distribution instead
 of clipping ~80-96% of it away.
@@ -386,7 +386,7 @@ alone, for comparison with the grand-average.
 
 ### Root cause
 
-Raised by the thesis advisor: `_resize_2d()` (`src/ersp.py`) uses bilinear
+Raised by the thesis advisor: `_resize_2d()` (`src/p2_ersp/ersp.py`) uses bilinear
 interpolation (`scipy.ndimage.zoom`) to stretch the raw STFT output to
 `(IMG_FREQ_BINS, IMG_TIME_BINS) = (22, 128)`. The frequency axis needed
 essentially no stretching (22 real bins -> 22 output bins, ~1.00x), but the
@@ -449,7 +449,7 @@ measurably hurting any model.
 ## Fourth Diagnostic Finding — Colormap Choice for ERSP Heatmaps (applied, visualisation only)
 
 > **Status: APPLIED.** Visualisation-only change - does not affect any
-> tensor, model, or metric. `src/ersp.py`'s plotting functions switched from
+> tensor, model, or metric. `src/p2_ersp/ersp.py`'s plotting functions switched from
 > `cmap="RdYlBu_r"` to `cmap="jet"`.
 
 ### Observation
@@ -463,7 +463,7 @@ colormap, sharp hue transitions) as the expected presentation format.
 
 ### Fix applied
 
-All `cmap="RdYlBu_r"` occurrences in `src/ersp.py`'s plotting functions
+All `cmap="RdYlBu_r"` occurrences in `src/p2_ersp/ersp.py`'s plotting functions
 (`plot_ersp_examples`, `plot_ersp_average`, `plot_ersp_grand_average`,
 `plot_ersp_grand_average_wavelet`, `plot_stft_vs_wavelet`) changed to
 `cmap="jet"`. Compared side-by-side against `turbo` (the perceptually-improved
@@ -471,7 +471,7 @@ modern alternative to `jet`): `jet`'s sharper, earlier green-to-cyan-to-blue
 transition gives more apparent contrast for the 2-6 dB range typical of
 motor-imagery ERD/ERS than `turbo`'s smoother ramp - `jet` was kept.
 
-A standalone diagnostic script, `src/diagnostic_db_heatmap.py`, generates the
+A standalone diagnostic script, `src/analysis/diagnostics/diagnostic_db_heatmap.py`, generates the
 grand-average heatmap in **real dB units** (not the [0,1] normalised scale
 stored for CNN training) with a signed, diverging colour bar centred at
 0 dB - the literal format the advisor asked to see
@@ -512,7 +512,7 @@ mean_trials(baseline))`, which is exactly 0 dB at baseline by construction.
 
 ### Status
 
-Independently confirmed fixed in `src/erd_characterization.py`
+Independently confirmed fixed in `src/analysis/interpretability/erd_characterization.py`
 (`compute_tfr(..., average=True)` averages power before the log - see that
 module's docstring and the accompanying study notes). Measured on the same
 check there: **+0.05 dB** at baseline (S04, right hand), i.e. the bias is
@@ -537,7 +537,7 @@ None of this changes the production pipeline or any committed per-experiment
 result file (all scripts are exploratory, under `src/diagnostic_*.py` /
 `src/experiment_*.py`).
 
-### 1. Paired statistical test (`src/diagnostic_stats_test.py`)
+### 1. Paired statistical test (`src/p3_classification/evaluation/diagnostic_stats_test.py`)
 
 The cross-experiment comparison table ranks methods by mean accuracy alone;
 with ±12-16% std across only 9 subjects, several rankings could plausibly be
@@ -562,7 +562,7 @@ subjects, not a bad run. Pooled vs. subject-specific training for SpectNet
 is statistically indistinguishable - a single shared model is as good as 9
 separate ones, which favours the simpler pooled approach.
 
-### 2. ShallowConvNet learning-rate sweep (`src/diagnostic_lr_sweep.py`)
+### 2. ShallowConvNet learning-rate sweep (`src/analysis/diagnostics/diagnostic_lr_sweep.py`)
 
 All three CNN architectures share one global `LEARNING_RATE=1e-3` in
 `config.py`, never tuned per architecture. Tested 1e-4 / 3e-4 / 1e-3 on
@@ -582,7 +582,7 @@ more likely architectural (ShallowConvNet's square→log nonlinearity,
 designed to mimic CSP log-variance, interacting badly with the corrected,
 noisier ERSP distribution) rather than a mistunable hyperparameter.
 
-### 3. Ensemble: FBCSP+LDA + SpectNet pooled (`src/experiment_ensemble.py`)
+### 3. Ensemble: FBCSP+LDA + SpectNet pooled (`src/p3_classification/evaluation/experiment_ensemble.py`)
 
 FBCSP's `predict_proba` (LDA) and SpectNet pooled's softmax output are
 averaged per trial (`weight * FBCSP + (1-weight) * SpectNet`). Both are
@@ -607,7 +607,7 @@ That is leakage: a hyperparameter tuned against the test set inflates the
 reported accuracy, even if only slightly. See the corrected version
 immediately below for the number that should actually be reported.
 
-#### Corrected: weight chosen on validation, not test (`src/experiment_ensemble_validated.py`)
+#### Corrected: weight chosen on validation, not test (`src/p3_classification/evaluation/experiment_ensemble_validated.py`)
 
 Per subject, sessions 1-3 (T) are split into T-train/T-val (stratified,
 `test_size=VAL_SPLIT=0.15`, `seed=RANDOM_SEED`). FBCSP+LDA is refit on
@@ -643,7 +643,7 @@ during its own training. Retraining SpectNet with a clean 3-way split is out
 of scope here; this fix addresses specifically the ensemble-weight-selection
 leakage the advisor flagged, not a from-scratch re-run of the CNN itself.
 
-### 4. Data augmentation on ShallowConvNet (`src/augmentation.py`, `src/experiment_augmentation.py`)
+### 4. Data augmentation on ShallowConvNet (`src/p3_classification/cnn/augmentation.py`, `src/analysis/experiments/experiment_augmentation.py`)
 
 Simple Gaussian noise (std=0.03, normalised [0,1] scale) and random circular
 time-shift (±6 bins) applied only to the training split via a new
@@ -665,7 +665,7 @@ n=9 - promising enough to revisit with a larger augmentation budget (more
 transform variety, or mixup between same-class trials) rather than treating
 ShallowConvNet's collapse as solved.
 
-### 5. Fine-tuning SpectNet pooled — per-subject and global continuation (`src/experiment_finetune.py`)
+### 5. Fine-tuning SpectNet pooled — per-subject and global continuation (`src/analysis/experiments/experiment_finetune.py`)
 
 Motivated by the literature review (BCI-IV-2a fine-tuning schedules reporting
 +22pp from conservative per-subject fine-tuning of a pooled model — see
@@ -717,7 +717,7 @@ fixed by adding a `save_outputs=False` option that only the production
 
 ## Experiment 1 — CNN Subject-Pooled
 
-**Scripts:** `src/train.py`, `src/evaluate.py`  
+**Scripts:** `src/p3_classification/cnn/train.py`, `src/p3_classification/evaluation/evaluate.py`  
 **Results:** `results/figures/`, `results/metrics/`
 
 ### Design
@@ -811,7 +811,7 @@ largest model (SpectNet) without hurting the others.
 
 ## Experiment 2 — CNN Subject-Specific
 
-**Script:** `src/train_subject_specific.py`  
+**Script:** `src/p3_classification/cnn/train_subject_specific.py`  
 **Results:** `results/subject_specific/figures/`, `results/subject_specific/metrics/`
 
 ### Design
@@ -887,7 +887,7 @@ strongest responder, S02/S03 remain weak.
 
 ## Experiment 3 — Classical Baseline: CSP + LDA / SVM
 
-**Script:** `src/train_csp_lda.py`  
+**Script:** `src/p3_classification/classical/train_csp_lda.py`  
 **Results:** `results/csp_lda/figures/`, `results/csp_lda/metrics/`
 
 ### Design
@@ -926,7 +926,7 @@ ERSP bug was fixed.
 
 ## Experiment 4 — Euclidean Alignment + CSP + LDA
 
-**Script:** `src/train_ea_csp_lda.py`  
+**Script:** `src/p3_classification/classical/train_ea_csp_lda.py`  
 **Results:** `results/ea_csp_lda/figures/`, `results/ea_csp_lda/metrics/`
 
 ### Design
@@ -964,7 +964,7 @@ Experiment 1 to make sense.
 
 ## Experiment 5a — Filter Bank CSP (FBCSP)
 
-**Script:** `src/train_fbcsp.py`
+**Script:** `src/p3_classification/classical/train_fbcsp.py`
 **Results:** `results/fbcsp/figures/`, `results/fbcsp/metrics/`
 
 ### Design
@@ -999,7 +999,7 @@ came close to matching it.
 
 ## Experiment 5b — Riemannian Geometry (MDM / TS+LDA)
 
-**Script:** `src/train_riemannian.py`
+**Script:** `src/p3_classification/classical/train_riemannian.py`
 **Results:** `results/riemannian/figures/`, `results/riemannian/metrics/`
 
 ### Design
@@ -1084,7 +1084,7 @@ see "Follow-up Experiments".
 
 ---
 
-## Interpretability — Grad-CAM and Channel Saliency (`src/gradcam_spectnet.py`)
+## Interpretability — Grad-CAM and Channel Saliency (`src/analysis/interpretability/gradcam_spectnet.py`)
 
 Per advisor request: does SpectNet pooled actually look at the mu/beta
 contralateral region the ERD/ERS characterization (`erd_characterization.py`)
@@ -1151,7 +1151,7 @@ from the "textbook" physiological picture for reasons including per-subject
 signal quality, electrode impedance/noise differences, and how `conv1`
 mixes channels from the very first layer.
 
-## C3−C4 Explicit Difference Channel (`src/experiment_c3c4_channel.py`)
+## C3−C4 Explicit Difference Channel (`src/analysis/experiments/experiment_c3c4_channel.py`)
 
 Motivated directly by the finding above: does giving the model an explicit
 C3−C4 difference channel (computed on the raw signal before the ERSP
@@ -1180,7 +1180,7 @@ useful signal in C4 directly than in the engineered C3−C4 feature.
 
 ---
 
-## AST (Audio Spectrogram Transformer) Fine-Tuning (`src/experiment_ast.py`)
+## AST (Audio Spectrogram Transformer) Fine-Tuning (`src/analysis/experiments/experiment_ast.py`)
 
 Per advisor request: fine-tune AST (Gong et al. 2021,
 `MIT/ast-finetuned-audioset-10-10-0.4593`, 86M params, pretrained on
@@ -1249,7 +1249,7 @@ CPU-constrained setup could not run.
 
 ---
 
-## ERSP Resolution / Blur Sweep (`src/experiment_resolution_sweep.py`)
+## ERSP Resolution / Blur Sweep (`src/analysis/experiments/experiment_resolution_sweep.py`)
 
 Per advisor request: shrink the per-trial ERSP image and check whether a
 Gaussian anti-aliasing blur before downsampling helps. SpectNet trained
@@ -1296,7 +1296,7 @@ in "Experiment 2" above.
 1. **Evaluation labels were broken (critical bug):** The GDF evaluation files contain
    no true class labels. The original code mapped generic event types (781, 783) as
    left/right, forcing all classifiers to ~50%. Fixed by retrieving true labels from
-   MOABB (`src/eval_labels.py`) and applying them during preprocessing.
+   MOABB (`src/p1_preprocessing/eval_labels.py`) and applying them during preprocessing.
 
 2. **ERSP per-trial normalisation matters:** Per-trial min-max normalisation destroys
    inter-trial comparability. Fixed to ±6 dB clip (commit `3a242de`).

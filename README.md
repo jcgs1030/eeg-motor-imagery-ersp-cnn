@@ -82,27 +82,27 @@ eeg-motor-imagery-ersp-cnn/
 BCI-IV-2b GDF files
         │
         ▼
-1. Preprocessing       (src/preprocessing.py)
+1. Preprocessing       (src/p1_preprocessing/preprocessing.py)
    ├─ Channels: C3, Cz, C4
    ├─ Bandpass: 8–30 Hz (FIR Hamming)
    ├─ Artifacts: ICA (FastICA, 3 components)
    └─ Epochs: −0.5 to 4.0 s
         │
         ▼
-2. ERSP Generation     (src/ersp.py)
+2. ERSP Generation     (src/p2_ersp/ersp.py)
    ├─ STFT: Hann window, 256 samples, 75% overlap
    ├─ Range: 8–30 Hz → 22 bins
    ├─ Normalization: divisive baseline (dB)
    └─ Output: (3, 22, 128) tensor per trial
         │
         ▼
-3. CNN Classification  (src/train.py + src/models/)
+3. CNN Classification  (src/p3_classification/cnn/train.py + src/p3_classification/cnn/models/)
    ├─ EEGNet          ~2,300 parameters
    ├─ ShallowConvNet  ~47,000 parameters
    └─ SpectNet        ~1,500 parameters
         │
         ▼
-4. Evaluation          (src/evaluate.py)
+4. Evaluation          (src/p3_classification/evaluation/evaluate.py)
    ├─ Protocol: sessions 1–3 train | sessions 4–5 test
    ├─ Metrics: accuracy, kappa, F1, confusion matrix
    └─ Baselines: LDA, SVM+CSP
@@ -279,7 +279,7 @@ ShallowConvNet improvement attempts).
 
 ## Known Methodological Findings — ERSP Computation (fixed and reprocessed, three times)
 
-Three independent issues were found in the ERSP computation (`src/ersp.py`)
+Three independent issues were found in the ERSP computation (`src/p2_ersp/ersp.py`)
 and fixed in sequence, plus a purely cosmetic colormap change. All were
 necessary for scientifically defensible, legible ERSP values; only one of
 the three (the hop fix) improved classification accuracy. This is itself
@@ -320,7 +320,7 @@ all three fixes above, the grand-average heatmap plotted with a smooth
 diverging colormap (`RdYlBu_r`) still made the ERD hard to see at a glance.
 Switched to `jet` (the classic EEGLAB-style ERSP convention) — its sharper
 hue transitions make the 2-6 dB contralateral signal visible without further
-explanation. See `src/diagnostic_db_heatmap.py` for a standalone script that
+explanation. See `src/analysis/diagnostics/diagnostic_db_heatmap.py` for a standalone script that
 plots the grand-average in real (signed) dB units instead of the [0,1] scale
 used for training.
 
