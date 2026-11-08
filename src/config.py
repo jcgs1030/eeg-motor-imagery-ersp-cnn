@@ -41,7 +41,7 @@ EVENT_LEFT    = 769   # left-hand imagery → class 0
 EVENT_RIGHT   = 770   # right-hand imagery → class 1
 # Evaluation sessions (4-5): GDF only contains generic event types, NOT labels.
 # 781 = BCI feedback (continuous), 783 = cue onset (class unknown in the file).
-# True labels are retrieved from MOABB via src/eval_labels.py and applied
+# True labels are retrieved from MOABB via src/p1_preprocessing/eval_labels.py and applied
 # in chronological trial order during preprocessing.
 EVENT_CUE_EVAL = 783  # cue onset marker in eval sessions — used for epoch alignment only
 EVENT_LABELS   = {769: 0, 770: 1}   # training labels only
