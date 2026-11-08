@@ -33,80 +33,97 @@ This repository contains the full implementation developed as part of the Master
 
 ## Repository Structure
 
+The code in `src/` is organized by **pipeline stage**, following the data flow.
+Each stage reads the previous stage's output from `data/processed/`.
+
 ```
 eeg-motor-imagery-ersp-cnn/
 ├── README.md
-├── EXPERIMENTS.md             ← full experimental log with results and analysis
-├── pyproject.toml
-├── uv.lock
-├── .python-version
+├── EXPERIMENTS.md                 ← full experimental log: every result, fix and caveat
+├── pyproject.toml · uv.lock · .python-version
 ├── data/
-│   ├── raw/                   ← place your GDF files here (B0101T.gdf ... B0905E.gdf)
-│   └── processed/             ← auto-generated epochs (.fif) and spectrograms (.npz)
-├── notebooks/
-│   ├── 01_dataset_exploration.ipynb
-│   └── 02_gdf_visual_exploration.ipynb
+│   ├── raw/                       ← GDF files go here (B0101T.gdf ... B0905E.gdf)
+│   └── processed/                 ← S??{T,E}-epo.fif (stage 1) and S??{T,E}-ersp.npz (stage 2)
+├── notebooks/                     ← dataset exploration
 ├── src/
-│   ├── config.py              ← all pipeline parameters (single source of truth)
-│   ├── preprocessing.py       ← GDF loading, bandpass filter, epoching
-│   ├── ersp.py                ← STFT-based ERSP spectrogram generation
-│   ├── dataset.py             ← PyTorch Dataset / DataLoader
-│   ├── train.py               ← CNN training — subject-pooled
-│   ├── train_subject_specific.py  ← CNN training — one model per subject
-│   ├── train_csp_lda.py       ← classical baseline: CSP + LDA / SVM
-│   ├── train_ea_csp_lda.py    ← domain adaptation: EA + CSP + LDA / SVM
-│   ├── evaluate.py            ← metrics, confusion matrix, model comparison
-│   └── models/
-│       ├── eegnet.py          ← EEGNet (Lawhern et al., 2018)
-│       ├── shallowconvnet.py  ← ShallowConvNet (Schirrmeister et al., 2017)
-│       └── spectnet.py        ← SpectNet (Ruffini et al., 2018)
-└── results/
-    ├── figures/               ← Exp 1: pooled CNN
-    ├── metrics/
-    ├── subject_specific/      ← Exp 2: subject-specific CNN
-    │   ├── figures/
-    │   └── metrics/
-    ├── csp_lda/               ← Exp 3: CSP + LDA / SVM
-    │   ├── figures/
-    │   └── metrics/
-    └── ea_csp_lda/            ← Exp 4: EA + CSP + LDA / SVM
-        ├── figures/
-        └── metrics/
+│   ├── config.py                  ← all parameters, shared by every stage
+│   │
+│   ├── p1_preprocessing/          ── PIPELINE 1: raw EEG → clean epochs
+│   │   ├── preprocessing.py       ← GDF loading, 8–30 Hz FIR, ICA, artifact rejection, epoching
+│   │   ├── eval_labels.py         ← true labels for sessions 4–5 (from MOABB)
+│   │   └── verify_timeline.py     ← checks the trial timeline against raw event markers
+│   │
+│   ├── p2_ersp/                   ── PIPELINE 2: epochs → ERSP images (CNN branch only)
+│   │   └── ersp.py                ← STFT → baseline-normalized dB → (3, 22, 32) image per trial
+│   │
+│   ├── p3_classification/         ── PIPELINE 3: train, evaluate, compare
+│   │   ├── cnn/                   ← reads the ERSP images
+│   │   │   ├── models/            ← SpectNet, EEGNet, ShallowConvNet
+│   │   │   ├── dataset.py · augmentation.py
+│   │   │   ├── train.py           ← one model pooled over the 9 subjects
+│   │   │   └── train_subject_specific.py  ← one model per subject
+│   │   ├── classical/             ← reads the epochs directly (no images)
+│   │   │   ├── train_csp_lda.py · train_ea_csp_lda.py
+│   │   │   ├── train_fbcsp.py     ← best single method
+│   │   │   └── train_riemannian.py
+│   │   └── evaluation/
+│   │       ├── evaluate.py · evaluate_cv.py
+│   │       ├── experiment_ensemble_validated.py  ← FBCSP + SpectNet, headline result
+│   │       ├── experiment_ensemble.py            ← original version (weight tuned on test)
+│   │       ├── diagnostic_stats_test.py          ← paired Wilcoxon between methods
+│   │       └── generate_final_comparison.py      ← final comparison figures
+│   │
+│   └── analysis/                  ── outside the main pipeline (does not produce headline results)
+│       ├── interpretability/      ← gradcam_spectnet.py, erd_characterization.py
+│       ├── experiments/           ← AST, augmentation, C3−C4 channel, fine-tuning, resolution sweep
+│       └── diagnostics/           ← scripts that found and confirmed the ERSP bugs, LR sweep
+└── results/                       ← outputs (see table below)
 ```
 
 ---
 
-## Pipeline Overview
+## Pipelines
 
 ```
-BCI-IV-2b GDF files
-        │
-        ▼
-1. Preprocessing       (src/p1_preprocessing/preprocessing.py)
-   ├─ Channels: C3, Cz, C4
-   ├─ Bandpass: 8–30 Hz (FIR Hamming)
-   ├─ Artifacts: ICA (FastICA, 3 components)
-   └─ Epochs: −0.5 to 4.0 s
-        │
-        ▼
-2. ERSP Generation     (src/p2_ersp/ersp.py)
-   ├─ STFT: Hann window, 256 samples, 75% overlap
-   ├─ Range: 8–30 Hz → 22 bins
-   ├─ Normalization: divisive baseline (dB)
-   └─ Output: (3, 22, 128) tensor per trial
-        │
-        ▼
-3. CNN Classification  (src/p3_classification/cnn/train.py + src/p3_classification/cnn/models/)
-   ├─ EEGNet          ~2,300 parameters
-   ├─ ShallowConvNet  ~47,000 parameters
-   └─ SpectNet        ~1,500 parameters
-        │
-        ▼
-4. Evaluation          (src/p3_classification/evaluation/evaluate.py)
-   ├─ Protocol: sessions 1–3 train | sessions 4–5 test
-   ├─ Metrics: accuracy, kappa, F1, confusion matrix
-   └─ Baselines: LDA, SVM+CSP
+ data/raw/*.gdf
+       │
+ ① p1_preprocessing ──► data/processed/*-epo.fif ──────────────┐
+       │                                                      │
+ ② p2_ersp ──► data/processed/*-ersp.npz                       │
+       │                                                      │
+ ③ p3_classification/cnn                 p3_classification/classical
+   SpectNet · EEGNet · ShallowConvNet      CSP · EA-CSP · FBCSP · Riemannian
+       │                                                      │
+       └──────────────► p3_classification/evaluation ◄────────┘
+                        metrics · ensemble · Wilcoxon · figures
 ```
+
+The classical methods skip stage ② entirely: they work on the filtered
+epochs (log-variance or covariance features), not on images. Only the CNNs
+use the ERSP images. The ensemble joins both branches.
+
+> Several scripts in `analysis/` and `p3_classification/evaluation/`
+> recompute ERSP images in memory from the `.fif` epochs instead of reading
+> the cached `.npz` (to test other resolutions or channels). A change to
+> `IMG_TIME_BINS` must be checked against them.
+
+### Where to find what
+
+| Question | Code | Results |
+|---|---|---|
+| How is the raw EEG cleaned? | `src/p1_preprocessing/preprocessing.py`, `src/config.py` | `results/figures/` (preprocessing figures) |
+| Where do the evaluation labels come from? | `src/p1_preprocessing/eval_labels.py` | — |
+| How is an ERSP image computed? | `src/p2_ersp/ersp.py` | `results/figures/` (grand-average ERSP) |
+| What are the CNN architectures? | `src/p3_classification/cnn/models/` | — |
+| Pooled CNN results (Exp 1) | `src/p3_classification/cnn/train.py`, `evaluation/evaluate.py` | `results/*_all.pth`, `results/metrics/`, `results/figures/` |
+| Subject-specific CNN results (Exp 2) | `src/p3_classification/cnn/train_subject_specific.py` | `results/subject_specific/` |
+| Classical baselines (Exp 3–5) | `src/p3_classification/classical/` | `results/csp_lda/`, `results/ea_csp_lda/`, `results/fbcsp/`, `results/riemannian/` |
+| Cross-validation within sessions 1–3 | `src/p3_classification/evaluation/evaluate_cv.py` | `results/cv_within_train/` |
+| Best result (ensemble) and its p-values | `src/p3_classification/evaluation/experiment_ensemble_validated.py`, `diagnostic_stats_test.py` | `EXPERIMENTS.md` → "Follow-up Experiments" |
+| Does the model look at mu/beta over C3/C4? | `src/analysis/interpretability/gradcam_spectnet.py` | `results/figures/gradcam/` |
+| Is the ERD/ERS statistically significant? | `src/analysis/interpretability/erd_characterization.py` | `results/figures/erd_characterization/` |
+| Why 32 time bins and no blur? | `src/analysis/experiments/experiment_resolution_sweep.py` | `EXPERIMENTS.md` → "ERSP Resolution / Blur Sweep" |
+| What bugs were found in the ERSP and how were they confirmed? | `src/analysis/diagnostics/` | `results/baseline_bug_before_fix/`, `EXPERIMENTS.md` → "Diagnostic Finding" sections |
 
 ---
 
@@ -148,42 +165,67 @@ uv run jupyter notebook notebooks/01_dataset_exploration.ipynb
 ### 4. Full pipeline
 
 ```bash
+# ① Preprocessing
 uv run preprocess --subject all --suffix both
+
+# ② ERSP images
 uv run ersp --subject all --suffix both --plot
+
+# ③ CNN branch
 uv run train --model spectnet --all_subjects
 uv run train --model eegnet --all_subjects
 uv run train --model shallowconvnet --all_subjects
+uv run python src/p3_classification/cnn/train_subject_specific.py
+
+# ③ Classical branch
+uv run python src/p3_classification/classical/train_csp_lda.py
+uv run python src/p3_classification/classical/train_ea_csp_lda.py
+uv run python src/p3_classification/classical/train_fbcsp.py
+uv run python src/p3_classification/classical/train_riemannian.py
+
+# ③ Evaluation and comparison
 uv run evaluate
+uv run python src/p3_classification/evaluation/experiment_ensemble_validated.py
+uv run python src/p3_classification/evaluation/generate_final_comparison.py
 ```
+
+Every script accepts `--help`. All scripts can be run by file path from the
+repository root; `uv sync` installs `src` as a package, so imports resolve
+from anywhere.
 
 ---
 
-## Key Parameters (src/config.py)
+## Key Parameters (`src/config.py`)
 
 | Parameter | Value | Rationale |
 |-----------|-------|-----------|
-| Bandpass filter | 8–30 Hz | Mu and beta bands |
-| Epoch window | −0.5 to 4.0 s | Includes pre-stimulus baseline |
-| STFT window | 256 samples (1.024 s) | ~1 Hz frequency resolution |
-| STFT overlap | 75% | Adequate temporal resolution |
+| Channels | C3, Cz, C4 | Only electrodes in BCI-IV-2b |
+| Bandpass filter | 8–30 Hz (FIR, Hamming) | Mu and beta bands |
+| Artifacts | ICA (FastICA, 3 components) + 100 µV rejection | Ocular/muscular artifacts |
+| Epoch window | −3.0 to 4.0 s around the cue | Includes the full pre-cue fixation period |
+| ERSP baseline | −1.0 to 0.0 s | Must be ≥ STFT window length (see "Known Methodological Findings") |
+| Analysis window | −0.5 to 4.0 s | Part of the epoch turned into the image |
+| STFT | Hann, 256 samples (1.024 s), hop 9 samples (36 ms, ~96.5% overlap) | ~1 Hz frequency resolution, 125 real time frames |
 | ERSP range | 8–30 Hz (22 bins) | Motor-relevant frequencies |
-| Normalization | Divisive baseline (dB) | Relative to pre-stimulus |
-| Image size | 22 × 128 px | Per channel, per trial |
+| Normalization | Divisive baseline (dB), clipped to ±6 dB, scaled to [0, 1] | Comparable across trials |
+| Image size | 22 × 32 per channel per trial | Reduced from 22 × 128, see `EXPERIMENTS.md` |
 | Train / test | Sessions 1–3 / 4–5 | Standard BCI-IV-2b protocol |
-| Optimizer | Adam lr=0.001 | Weight decay = 1e−4 |
-| Early stopping | Patience = 20 | On validation loss |
+| Optimizer | Adam, lr = 0.001, weight decay = 1e−4 | — |
+| Early stopping | Patience = 20 on validation loss (15% of training set) | — |
 
 ---
 
 ## Architectures
 
-| Architecture | Parameters | Reference |
+| Architecture | Parameters (22 × 32 input) | Reference |
 |---|---|---|
-| **EEGNet** | ~2,300 | Lawhern et al., J. Neural Eng., 2018 |
-| **ShallowConvNet** | ~47,000 | Schirrmeister et al., Hum. Brain Mapp., 2017 |
-| **SpectNet** | ~1,500 | Ruffini et al., arXiv, 2018 |
+| **SpectNet** | 88,050 | Ruffini et al., arXiv, 2018 |
+| **ShallowConvNet** | 36,242 | Schirrmeister et al., Hum. Brain Mapp., 2017 |
+| **EEGNet** | 6,098 | Lawhern et al., J. Neural Eng., 2018 |
 
-All input: `(batch, 3, 22, 128)` — 3 channels × 22 freq. bins × 128 time steps.
+Input: `(batch, 3, 22, 32)`, i.e. 3 channels × 22 frequency bins × 32 time
+steps. ShallowConvNet's temporal kernel and pooling lengths scale with the
+number of time bins (25/75/15 at 128 bins → 6/19/4 at 32).
 
 ---
 
@@ -200,11 +242,15 @@ Full experimental narrative and per-experiment analysis in [`EXPERIMENTS.md`](EX
 
 ### Experiment 1 — CNN Subject-Pooled
 
-| Model | Test Accuracy |
-|---|---|
-| EEGNet | 70.0% |
-| ShallowConvNet | 60.3% |
-| **SpectNet** | **71.7%** |
+| Model | Test accuracy, 22 × 128 images | Current checkpoint, 22 × 32 images |
+|---|---|---|
+| EEGNet | 70.0% | not retrained yet (checkpoint is still 22 × 128) |
+| ShallowConvNet | 60.3% | 59.3% |
+| **SpectNet** | **71.7%** | 68.0% |
+
+The 22 × 128 column is the documented result in `EXPERIMENTS.md`. The pooled
+checkpoints for SpectNet and ShallowConvNet were retrained after the switch to
+32 time bins; the right column is the test accuracy stored in each checkpoint.
 
 Three independent ERSP bugs were found and fixed here (see "Known
 Methodological Findings" below): a too-short baseline window, a numerical
@@ -213,18 +259,22 @@ large that 110 of the 128 output time-bins were pure interpolation. Before
 any fix, all three pooled models scored ~48–50% (chance). The baseline-window
 fix alone pushed them to 70.7–74.5%; the epsilon fix then cost a few points
 back and collapsed ShallowConvNet specifically to near-chance; the hop fix
-partially recovered ground for SpectNet (70.0%→71.7%, its best result) while
-leaving ShallowConvNet's collapse unchanged. See
+partially recovered ground for SpectNet (70.0%→71.7%) while leaving
+ShallowConvNet's collapse unchanged. See
 [`EXPERIMENTS.md`](EXPERIMENTS.md#experiment-1--cnn-subject-pooled) for the
 full four-stage before/after table.
 
-### Experiment 2 — CNN Subject-Specific
+### Experiment 2 — CNN Subject-Specific (22 × 32 images)
 
 | Model | Accuracy | F1-score | Kappa |
 |---|---|---|---|
-| EEGNet | 69.0% ± 11.6% | 68.5% ± 12.0% | 0.379 |
-| ShallowConvNet | 54.5% ± 6.9% | 52.6% ± 8.6% | 0.090 |
-| SpectNet | 70.8% ± 13.1% | 68.7% ± 17.0% | 0.416 |
+| EEGNet | 68.6% ± 12.2% | 66.6% ± 16.1% | 0.372 |
+| ShallowConvNet | 54.8% ± 7.4% | 53.3% ± 8.4% | 0.096 |
+| SpectNet | 69.5% ± 12.9% | 69.1% ± 13.3% | 0.390 |
+
+Versus 22 × 128 images (paired Wilcoxon, n = 9): SpectNet −1.3 pp (p = 0.074,
+lower on 7 of 9 subjects), EEGNet −0.4 pp (p = 0.734), ShallowConvNet +0.3 pp
+(p = 1.0). None is significant, but SpectNet's drop is a consistent trend.
 
 ### Experiment 3 — CSP Baselines
 
@@ -263,7 +313,7 @@ test set), significantly ahead of either method alone (paired Wilcoxon,
 p=0.027 and p=0.008 respectively; n=9 subjects). **Best single method:
 FBCSP+LDA at 75.9%**, consistent with the BCI-IV-2b literature for
 3-channel classifiers and still ahead of every individual ERSP+CNN method
-(best CNN: SpectNet pooled, 71.7%). All three ERSP fixes were worth applying
+(best CNN: SpectNet pooled, 71.7% with 22 × 128 images). All three ERSP fixes were worth applying
 for scientific correctness, but only the hop fix gave a CNN method a boost on
 its own — see "Known Methodological Findings" below. High inter-subject
 variance (±12–16%) reflects genuine differences in individual EEG motor
@@ -307,7 +357,7 @@ visually with a classic Pfurtscheller-style ERD curve
 average now shows a clean -10 to -12% contralateral ERD.
 
 **3. STFT hop too large relative to the output size.** `_resize_2d()` stretches
-the raw STFT output to `(22, 128)` via bilinear interpolation. The frequency
+the raw STFT output to `(22, 128)` (now `(22, 32)`) via bilinear interpolation. The frequency
 axis needed ~1.00x (22 real bins already). The time axis needed **7.11x**:
 with the original `STFT_HOP=64` (256ms), the 4.5s analysis window produced
 only 18 real STFT frames — the other ~110 output time-bins were pure
