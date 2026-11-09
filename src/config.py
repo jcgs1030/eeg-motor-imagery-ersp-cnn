@@ -74,10 +74,17 @@ ANALYSIS_TMAX =  4.0
 # Epoch rejection threshold (maximum amplitude artefact)
 REJECT_THRESH = 100e-6   # 100 µV on any channel
 
-# ICA
-ICA_N_COMPS   = 3     # equal to the number of EEG channels
-ICA_METHOD    = "fastica"
-ICA_SEED      = 42
+# ICA: removed from the pipeline (external review, M-2).
+# With only 3 EEG channels (C3, Cz, C4) and n_components == n_channels, the
+# ICA unmixing is a full-rank rotation and ica.apply() re-mixes it exactly:
+# with no component excluded the whole step is the identity map. Verified
+# empirically on S01 session 1 (max |before - after| = 4.1e-20, i.e. 1.5e-14
+# relative to the signal std; per-channel correlation 1.0 to 15 decimals).
+# Excluding components was never possible either: BCI-IV-2b's EOG channels
+# are dropped in load_raw(), so there is no reference signal to correlate
+# ocular components against, and 3 channels cannot separate 3+ sources.
+# The flag was off by default, so no committed result ever used it.
+# Artefact handling is now exactly REJECT_THRESH (100 uV peak-to-peak).
 
 # ── ERSP spectrogram ─────────────────────────────────────────────────────────
 # Transform: STFT with Hann window
