@@ -62,7 +62,7 @@ from sklearn.metrics import accuracy_score, cohen_kappa_score
 from sklearn.model_selection import train_test_split
 from src.config import (
     DATA_PROC, SUBJECTS, SFREQ, N_CHANNELS, IMG_FREQ_BINS, IMG_TIME_BINS,
-    DEVICE, VAL_SPLIT, RANDOM_SEED,
+    DEVICE, VAL_SPLIT, RANDOM_SEED, RESULTS_DIR,
 )
 from src.p2_ersp.ersp import compute_ersp_image
 from src.p3_classification.cnn.models import get_model
@@ -231,7 +231,7 @@ def main():
     seeds = args.seeds if args.seeds is not None else \
         [RANDOM_SEED + i for i in range(args.n_runs)]
 
-    ckpt = torch.load("results/spectnet_all.pth", map_location="cpu", weights_only=False)
+    ckpt = torch.load(str(RESULTS_DIR / "spectnet_all.pth"), map_location="cpu", weights_only=False)
     spectnet_model = get_model("spectnet", n_channels=N_CHANNELS, n_freq=IMG_FREQ_BINS,
                                n_time=IMG_TIME_BINS, n_classes=2)
     spectnet_model.load_state_dict(ckpt["state_dict"])

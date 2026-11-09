@@ -44,7 +44,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from src.config import (
-    DATA_PROC, FIGURES_DIR, SUBJECTS, CHANNELS, N_CHANNELS, SFREQ,
+    DATA_PROC, FIGURES_DIR, RESULTS_DIR, SUBJECTS, CHANNELS, N_CHANNELS, SFREQ,
     IMG_FREQ_BINS, IMG_TIME_BINS, ANALYSIS_TMIN, ANALYSIS_TMAX,
     ERSP_FMIN, ERSP_FMAX,
 )
@@ -206,7 +206,7 @@ def main():
     parser.add_argument("--subjects", type=int, nargs="+", default=SUBJECTS)
     args = parser.parse_args()
 
-    ckpt = torch.load("results/spectnet_all.pth", map_location="cpu", weights_only=False)
+    ckpt = torch.load(str(RESULTS_DIR / "spectnet_all.pth"), map_location="cpu", weights_only=False)
     model = get_model("spectnet", n_channels=N_CHANNELS, n_freq=IMG_FREQ_BINS,
                       n_time=IMG_TIME_BINS, n_classes=2)
     model.load_state_dict(ckpt["state_dict"])

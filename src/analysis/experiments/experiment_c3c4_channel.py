@@ -35,7 +35,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from src.config import (
-    DATA_PROC, FIGURES_DIR, SUBJECTS, CHANNELS, SFREQ,
+    DATA_PROC, FIGURES_DIR, RESULTS_DIR, SUBJECTS, CHANNELS, SFREQ,
     IMG_FREQ_BINS, IMG_TIME_BINS, ANALYSIS_TMIN, ANALYSIS_TMAX,
     ERSP_FMIN, ERSP_FMAX,
     BATCH_SIZE, MAX_EPOCHS, LEARNING_RATE, WEIGHT_DECAY,
@@ -203,7 +203,7 @@ def main():
     print("\n== Step 2: training SpectNet pooled, 4-channel input ==")
     model = train_pooled_4ch(X_train, y_train)
 
-    ckpt_path = "results/spectnet_c3c4_all.pth"
+    ckpt_path = str(RESULTS_DIR / "spectnet_c3c4_all.pth")
     torch.save({"model_name": "spectnet", "n_channels": N_CHANNELS_4,
                "state_dict": {k: v.cpu() for k, v in model.state_dict().items()}},
               ckpt_path)

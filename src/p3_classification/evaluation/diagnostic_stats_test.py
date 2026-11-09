@@ -21,13 +21,12 @@ Usage:
     python src/p3_classification/evaluation/diagnostic_stats_test.py
 """
 
-from pathlib import Path
-
 import numpy as np
 import pandas as pd
 import torch
 from scipy.stats import wilcoxon, ttest_rel
-from src.config import SUBJECTS, DATA_PROC, N_CHANNELS, IMG_FREQ_BINS, IMG_TIME_BINS, DEVICE
+from src.config import (SUBJECTS, DATA_PROC, RESULTS_DIR, N_CHANNELS, IMG_FREQ_BINS,
+                        IMG_TIME_BINS, DEVICE)
 from src.p3_classification.cnn.models import get_model
 from src.p3_classification.cnn.dataset import ERSPDataset
 
@@ -35,7 +34,7 @@ from src.p3_classification.cnn.dataset import ERSPDataset
 def per_subject_acc_pooled(model_name: str) -> dict:
     """Evaluate the pooled ('all subjects') checkpoint separately on each
     subject's own evaluation-session (E) trials."""
-    ckpt_path = Path(f"results/{model_name}_all.pth")
+    ckpt_path = RESULTS_DIR / f"{model_name}_all.pth"
     ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
     model = get_model(model_name, n_channels=N_CHANNELS, n_freq=IMG_FREQ_BINS,
                       n_time=IMG_TIME_BINS, n_classes=2)
@@ -78,20 +77,20 @@ def main():
         print(f"  {m} (pooled) done")
 
     methods["CSP+LDA"] = load_per_subject_csv(
-        "results/csp_lda/metrics/per_subject_results.csv",
+        str(RESULTS_DIR / "csp_lda" / "metrics" / "per_subject_results.csv"),
         model_filter="CSP+LDA", model_col="Classifier")
     methods["FBCSP+LDA"] = load_per_subject_csv(
-        "results/fbcsp/metrics/per_subject_results.csv",
+        str(RESULTS_DIR / "fbcsp" / "metrics" / "per_subject_results.csv"),
         model_filter="FBCSP+LDA", model_col="Classifier")
     methods["Riem-TS+LDA"] = load_per_subject_csv(
-        "results/riemannian/metrics/per_subject_results.csv",
+        str(RESULTS_DIR / "riemannian" / "metrics" / "per_subject_results.csv"),
         model_filter="Riem-TS+LDA", model_col="Classifier")
     methods["eegnet (subj-specific)"] = load_per_subject_csv(
-        "results/subject_specific/metrics/per_subject_results.csv", model_filter="eegnet")
+        str(RESULTS_DIR / "subject_specific" / "metrics" / "per_subject_results.csv"), model_filter="eegnet")
     methods["shallowconvnet (subj-specific)"] = load_per_subject_csv(
-        "results/subject_specific/metrics/per_subject_results.csv", model_filter="shallowconvnet")
+        str(RESULTS_DIR / "subject_specific" / "metrics" / "per_subject_results.csv"), model_filter="shallowconvnet")
     methods["spectnet (subj-specific)"] = load_per_subject_csv(
-        "results/subject_specific/metrics/per_subject_results.csv", model_filter="spectnet")
+        str(RESULTS_DIR / "subject_specific" / "metrics" / "per_subject_results.csv"), model_filter="spectnet")
 
     print("\n== Per-subject accuracy (rows=subjects, cols=methods) ==")
     df = pd.DataFrame(methods).sort_index()
