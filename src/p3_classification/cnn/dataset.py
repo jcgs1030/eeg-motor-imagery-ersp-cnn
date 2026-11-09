@@ -11,7 +11,8 @@ Usage:
 
 import numpy as np
 import torch
-from torch.utils.data import Dataset, DataLoader, random_split
+from sklearn.model_selection import train_test_split
+from torch.utils.data import Dataset, DataLoader, Subset, random_split
 from src.config import (
     DATA_PROC, SUBJECTS, BATCH_SIZE, VAL_SPLIT, RANDOM_SEED,
     N_CHANNELS, IMG_FREQ_BINS, IMG_TIME_BINS, TRAIN_SUFFIX, EVAL_SUFFIX
@@ -118,7 +119,8 @@ def build_loaders(subjects: list = None,
                   batch_size: int = BATCH_SIZE,
                   val_split: float = VAL_SPLIT,
                   seed: int = RANDOM_SEED,
-                  train_transform=None):
+                  train_transform=None,
+                  stratify: bool = True):
     """
     Build training, validation, and test DataLoaders.
 
@@ -136,6 +138,20 @@ def build_loaders(subjects: list = None,
     seed           : random seed for reproducibility
     train_transform: optional augmentation transform (see augmentation.py),
                      applied ONLY to the training split - never val/test.
+    stratify       : if True (default), the train/val split preserves the
+                     left/right class ratio (external review, C-3). This
+                     matters more here than elsewhere in the project: the
+                     *-ersp.npz files are written class-sorted by ersp.py
+                     (all 'left' trials, then all 'right'), so the split is
+                     taken over class-ordered indices. The previous
+                     random_split did come out balanced in practice (measured
+                     49.1% left in val for the pooled 9-subject set, all 9
+                     subjects represented proportionally), so this is a
+                     guarantee replacing a lucky seed, not a bug fix - but it
+                     does change WHICH trials land in val, and therefore
+                     early stopping. Checkpoints and metrics committed before
+                     this change were trained with the unstratified split;
+                     pass stratify=False to reproduce them exactly.
 
     Returns
     -------
@@ -153,10 +169,21 @@ def build_loaders(subjects: list = None,
     # Train / validation split
     n_val   = int(len(train_full) * val_split)
     n_train = len(train_full) - n_val
-    generator = torch.Generator().manual_seed(seed)
-    train_ds, val_ds = random_split(
-        train_full, [n_train, n_val], generator=generator
-    )
+    if stratify:
+        y_all = train_full.y.numpy()
+        train_idx, val_idx = train_test_split(
+            np.arange(len(train_full)), test_size=n_val,
+            stratify=y_all, random_state=seed,
+        )
+        train_ds = Subset(train_full, train_idx.tolist())
+        val_ds   = Subset(train_full, val_idx.tolist())
+    else:
+        # Legacy unstratified split - reproduces checkpoints committed before
+        # the stratified split became the default.
+        generator = torch.Generator().manual_seed(seed)
+        train_ds, val_ds = random_split(
+            train_full, [n_train, n_val], generator=generator
+        )
     if train_transform is not None:
         train_ds = _AugmentedSubset(train_ds, train_transform)
 

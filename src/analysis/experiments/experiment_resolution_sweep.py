@@ -31,6 +31,7 @@ import time
 
 import numpy as np
 import mne
+from sklearn.model_selection import train_test_split
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -112,12 +113,14 @@ def run_combo(X_train_full, y_train_full, X_test, y_test, n_time_bins: int,
     torch.manual_seed(RANDOM_SEED)
     np.random.seed(RANDOM_SEED)
 
-    n = len(y_train_full)
-    idx = np.arange(n)
-    rng = np.random.RandomState(RANDOM_SEED)
-    rng.shuffle(idx)
-    n_val = int(n * VAL_SPLIT)
-    val_idx, train_idx = idx[:n_val], idx[n_val:]
+    # Stratified by class (external review, C-3). The epoch .fif files this
+    # reads are in chronological order, so classes are already interleaved and
+    # a plain shuffle happened to come out balanced - but stratifying makes the
+    # balance a guarantee rather than a property of this particular seed.
+    train_idx, val_idx = train_test_split(
+        np.arange(len(y_train_full)), test_size=VAL_SPLIT,
+        stratify=y_train_full, random_state=RANDOM_SEED,
+    )
 
     train_ds = torch.utils.data.TensorDataset(
         torch.from_numpy(X_train_full[train_idx]), torch.from_numpy(y_train_full[train_idx]).long())
