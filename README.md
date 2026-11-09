@@ -49,7 +49,7 @@ eeg-motor-imagery-ersp-cnn/
 │   ├── config.py                  ← all parameters, shared by every stage
 │   │
 │   ├── p1_preprocessing/          ── PIPELINE 1: raw EEG → clean epochs
-│   │   ├── preprocessing.py       ← GDF loading, 8–30 Hz FIR, ICA, artifact rejection, epoching
+│   │   ├── preprocessing.py       ← GDF loading, 8–30 Hz FIR, artifact rejection, epoching
 │   │   ├── eval_labels.py         ← true labels for sessions 4–5 (from MOABB)
 │   │   └── verify_timeline.py     ← checks the trial timeline against raw event markers
 │   │
@@ -127,6 +127,18 @@ use the ERSP images. The ensemble joins both branches.
 
 ---
 
+## Tests
+
+```bash
+uv run pytest
+```
+
+30 unit tests covering `compute_ersp_image()`, the evaluation-session
+trial/label alignment, the train/val split contract and the augmentation
+transforms. The dataset-dependent tests skip automatically if
+`data/processed/` has not been generated yet. See `EXPERIMENTS.md` →
+"External Review — Code Hygiene Pass".
+
 ## Installation
 
 ```bash
@@ -201,7 +213,7 @@ from anywhere.
 |-----------|-------|-----------|
 | Channels | C3, Cz, C4 | Only electrodes in BCI-IV-2b |
 | Bandpass filter | 8–30 Hz (FIR, Hamming) | Mu and beta bands |
-| Artifacts | ICA (FastICA, 3 components) + 100 µV rejection | Ocular/muscular artifacts |
+| Artifacts | 100 µV peak-to-peak epoch rejection | Ocular/muscular artifacts. No ICA: with 3 channels and no EOG reference it is mathematically the identity map — see `config.py` |
 | Epoch window | −3.0 to 4.0 s around the cue | Includes the full pre-cue fixation period |
 | ERSP baseline | −1.0 to 0.0 s | Must be ≥ STFT window length (see "Known Methodological Findings") |
 | Analysis window | −0.5 to 4.0 s | Part of the epoch turned into the image |

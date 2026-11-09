@@ -1448,6 +1448,129 @@ in "Experiment 2" above.
 
 ---
 
+## External Review — Code Hygiene Pass
+
+An external evaluator reviewed the repository and filed 19 findings (5
+critical, 8 medium, 6 minor). This section records the hygiene subset that
+was implemented; the methodological findings (analysis-window sensitivity,
+the dB clip range, EEGNet's temporal kernel, Bonferroni correction) are
+tracked separately because they change reported numbers.
+
+### Implemented
+
+**ICA removed from the pipeline (M-2).** With 3 EEG channels and
+`n_components == n_channels`, the ICA unmixing is a full-rank rotation that
+`ica.apply()` re-mixes exactly; with no component excluded, the entire step
+is the identity map. Verified empirically on S01 session 1: max
+`|before - after|` = 4.1e-20, i.e. **1.5e-14 relative to the signal std**,
+with per-channel correlation 1.0 to 15 decimals. Excluding components was
+never an option either — BCI-IV-2b's EOG channels are dropped in
+`load_raw()`, so there is no reference to correlate ocular components
+against, and 3 channels cannot separate 3+ sources. The `--ica` flag was off
+by default, so **no committed result ever used it**; `README.md` nonetheless
+listed "ICA (FastICA, 3 components)" as the artifact-handling method, which
+was the actual problem. Artifact handling is now stated as what it always
+was: `REJECT_THRESH` (100 µV peak-to-peak) alone. Confirmed that
+`process_subject()` reproduces the committed `S01T-epo.fif` and
+`S01E-epo.fif` bit-for-bit after the removal.
+
+**Stratified train/val splits (C-3, C-4).** `experiment_resolution_sweep.py`,
+`experiment_ast.py` and `build_loaders()` now split with
+`train_test_split(..., stratify=y)`.
+
+A correction to the review's reasoning is worth recording: the evaluator
+attributed the risk to the trial ordering in `ersp.py`, which writes the
+`.npz` files class-sorted (all "left", then all "right"). That ordering is
+real, but neither flagged experiment reads the `.npz` files — both read the
+`*-epo.fif` epochs, which are **chronological and class-interleaved**
+(verified: `[1 2 1 2 2 2 2 2 1 2 ...]`), so an unstratified shuffle there was
+never at risk. The only consumer of the class-sorted order is
+`build_loaders()`, and even there the previous `random_split` came out
+balanced in practice: **49.1% left in val** for the pooled 9-subject set,
+with all 9 subjects represented proportionally (54–68 trials each).
+Stratification is therefore a guarantee replacing a lucky seed, not a bug
+fix. `build_loaders(stratify=False)` reproduces the old split exactly, since
+checkpoints committed before this change were trained with it.
+
+**Leaky ensemble script deprecated (C-2).** `experiment_ensemble.py`'s CLI
+entry point now raises `RuntimeError` pointing at
+`experiment_ensemble_validated.py`, and its docstring carries a deprecation
+banner. `compute_ensemble_per_subject()` stays importable, because
+`generate_final_comparison.py` depends on it.
+
+That dependency exposed an inconsistency the review did not catch:
+`generate_final_comparison.py` generates the **headline comparison figures**
+with `weight=0.6` — the test-set-tuned weight from the deprecated script —
+while the reported headline number (77.4% ± 0.3%) comes from the validated
+selection, which picks w=0.4–0.6 depending on seed. The weight is now a
+named constant, `ENSEMBLE_WEIGHT_TEST_TUNED`, documented as such with a
+`TODO`. It was deliberately **not** changed, because doing so alters
+committed figures and should be a separate, deliberate regeneration.
+
+**`TimeShift` no longer wraps around (L-4).** It used `torch.roll`, a
+circular shift: the end of the imagery period (deepest ERD) reappeared at
+the start of the image — at `max_shift=6` over 32 bins, up to ~19% of the
+image was wrapped content that cannot occur in a real trial. The vacated
+edge is now filled with 0.5, the neutral value on the [0,1] ERSP scale
+(0 dB, no change vs. baseline). This changes the augmentation experiment's
+inputs, so its 54.5%→56.3% result predates the fix.
+
+**`DB_CLIP` no longer shadowed (L-6).** The local `DB_CLIP = 6.0`
+redefinitions inside `compute_ersp_image()` and
+`compute_ersp_image_wavelet()` shadowed the module-level constant that
+`_to_db()` inverts, so changing one would have silently desynchronised the
+forward normalisation from the dB back-conversion. Both removed; a test
+pins the invariant. ERSP output verified byte-identical to the committed
+`.npz` after the change.
+
+**Hardcoded relative paths replaced (L-3).** The review listed 3 sites; there
+were **8** (`experiment_ensemble.py`, `experiment_ensemble_validated.py`,
+`experiment_finetune.py`, `experiment_ast.py`, `experiment_c3c4_channel.py`,
+`gradcam_spectnet.py`, `diagnostic_stats_test.py`,
+`generate_final_comparison.py`). All now resolve through `RESULTS_DIR`, so
+the scripts run from any working directory.
+
+**Unit tests added (L-5).** 30 tests under `tests/`, runnable with `pytest`
+from the repo root:
+
+| File | Covers |
+|---|---|
+| `test_ersp.py` | `compute_ersp_image()` output shape/range/dtype, the 0.5-is-neutral invariant, ERD sign convention, resolution parameters, `sigma=0` byte-identity, `_to_db()` round-trip, `DB_CLIP` shadowing regression |
+| `test_eval_label_alignment.py` | `extract_epochs_eval()` trial/label alignment through `epochs.selection`, including a deliberately rejected trial — the guard against the critical bug at the top of this log |
+| `test_dataset_and_augmentation.py` | stratified split balance, train/val disjointness, T/E protocol boundary, `TimeShift` no-wrap and frequency-axis invariance, `GaussianNoise` range |
+
+The dataset tests skip automatically when `data/processed/*.npz` is absent.
+
+### Byproduct finding — no buffer at the end of the analysis window
+
+Writing the "stationary signal maps to 0.5" test surfaced an asymmetry.
+`EPOCH_TMIN` was pulled back to -3.0 s to give `BASELINE` a 2 s buffer
+against the STFT's zero-padding taper (see "Baseline Window Contamination"),
+but `ANALYSIS_TMAX == EPOCH_TMAX == 4.0` — the **end** of the analysis window
+sits directly on the extracted trial's edge, with no buffer at all. On a
+noiseless synthetic sine the trailing taper saturates the last ~4 of 32 time
+bins completely. On real EEG the effect is much milder: measured over all 9
+subjects' T sessions, pixel saturation runs ~35% in the body of the image
+and 36.2% / 42.2% in the last two columns. Worth a mention in limitations;
+fixing it would mean extending `EPOCH_TMAX` past 4.0 s and reprocessing.
+
+### Not implemented (and why)
+
+| Finding | Status |
+|---|---|
+| C-1 `IMG_TIME_BINS` chosen on the test set | Real leakage, but the clean n=9 retraining already in this log shows 32 bins is **worse** than 128 (69.5% vs 70.8%, lower on 7/9 subjects) — the contaminated choice did not inflate the headline. Needs a limitations paragraph, not a code change. |
+| C-5 `random_split` crosses subject boundaries in pooled mode | Not leakage: the val split comes from sessions 1-3 and only drives early stopping; sessions 4-5 are untouched. Trial-level val splitting is standard for a pooled model. |
+| M-6 BatchNorm before the squared activation | **Review is incorrect.** `conv_time → conv_spat → bnorm → square → pool → log` is the original Schirrmeister et al. / braindecode `ShallowFBCSPNet` order. The repo matches it. ShallowConvNet's collapse is already shown to be robust (p=0.004, n=9) and its cause investigated separately. |
+| M-8 no significance tests between methods | **Review is incorrect.** `diagnostic_stats_test.py` runs paired Wilcoxon + t-test over 7 method pairs including FBCSP+LDA vs. SpectNet; results are tabulated above. Valid residue: Bonferroni correction and effect sizes are missing. |
+| L-2 dependency ranges / `transformers` version | **Review is incorrect.** `README.md` already instructs `uv sync`, and `transformers 5.20.1` is the real installed version, not a typo. |
+| M-1 analysis window includes cue VEPs | Valid; needs an `ANALYSIS_TMIN=0.5` sensitivity run. |
+| M-3 fixed ±6 dB clip | Valid and **understated**: 32.5% of all pixels are saturated (24.7% at the -6 dB ERD floor, 7.8% at the +6 dB ceiling), uniformly across all 9 subjects (30.1–35.1%) — not a strong-subject problem. Needs a wider-clip rerun. |
+| M-5 parameter/sample ratio | Headline figure wrong (88,050 params at 32 bins, not 540,000 — that is the 128-bin model at 604,146), but the concern stands. |
+| M-7 EEGNet kernel 64 > n_time 32 | Valid and **understated**: the time axis collapses to a **single bin** before the classifier (`pool2` output `(16, 1, 1)` vs `(16, 1, 4)` at 128 bins), so the model cannot represent temporal structure at all. `ShallowConvNet` already scales its kernels with `n_time`; EEGNet was left out. Highest-priority fix, requires retraining. |
+| L-1 CUDA seeds not fixed | Valid but near-moot: `DEVICE = "cpu"`. |
+
+---
+
 ## References
 
 - Leeb, R. et al. (2008). BCI Competition 2008 — Graz Data Set B. TU Graz.
