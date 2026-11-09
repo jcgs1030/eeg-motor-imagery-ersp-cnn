@@ -143,7 +143,9 @@ def compute_ersp_image(epoch_data: np.ndarray,
     # consistently across trials to learn the Left vs Right lateralization.
     # ±6 dB covers the typical ERD/ERS magnitude in motor imagery.
     # After scaling: 0.5 = no change, < 0.5 = ERD, > 0.5 = ERS.
-    DB_CLIP = 6.0
+    # DB_CLIP is the module-level constant (same one _to_db() inverts with) -
+    # it is deliberately NOT redefined here, so changing it in one place
+    # changes both the forward normalisation and the dB back-conversion.
     ersp_clipped = np.clip(ersp_resized, -DB_CLIP, DB_CLIP)
     ersp_norm = (ersp_clipped + DB_CLIP) / (2.0 * DB_CLIP)
 
@@ -203,7 +205,7 @@ def compute_ersp_image_wavelet(epoch_data: np.ndarray,
     ersp_analysis = ersp[:, analysis_mask]
     ersp_resized = _resize_2d(ersp_analysis, IMG_FREQ_BINS, IMG_TIME_BINS)
 
-    DB_CLIP = 6.0
+    # Module-level DB_CLIP (see compute_ersp_image) - not redefined locally.
     ersp_clipped = np.clip(ersp_resized, -DB_CLIP, DB_CLIP)
     ersp_norm = (ersp_clipped + DB_CLIP) / (2.0 * DB_CLIP)
 
