@@ -1,6 +1,24 @@
 """
 experiment_ensemble.py
 -------------------------
+DEPRECATED - DO NOT USE FOR REPORTED RESULTS.
+
+This is the original ensemble script. The ensemble weight `w` was chosen by
+sweeping it and keeping whichever value scored best on the TEST set
+(sessions 4-5), the same set the final number is reported on - i.e. the
+reported 78.8% was inflated by hyperparameter leakage.
+
+Use `experiment_ensemble_validated.py` instead: it selects `w` on a
+validation split carved out of the training sessions (1-3) and touches the
+test set exactly once. The headline ensemble result in README.md /
+EXPERIMENTS.md (77.4% +/- 0.3%) comes from that script.
+
+This file is kept only so the leaky procedure stays auditable against
+EXPERIMENTS.md, which documents both numbers side by side. Running it as a
+script now raises; `compute_ensemble_per_subject()` is still importable at
+an explicit, caller-supplied weight (see the note in
+generate_final_comparison.py).
+
 Exploratory ensemble of FBCSP+LDA (best classical method, multi-band
 log-variance on raw filtered epochs) and SpectNet pooled (best CNN method,
 full time-frequency ERSP). Does not touch any production result file.
@@ -25,7 +43,8 @@ from scipy.stats import wilcoxon
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 from sklearn.metrics import accuracy_score, cohen_kappa_score
 from src.config import (
-    DATA_PROC, SUBJECTS, SFREQ, N_CHANNELS, IMG_FREQ_BINS, IMG_TIME_BINS, DEVICE
+    DATA_PROC, SUBJECTS, SFREQ, N_CHANNELS, IMG_FREQ_BINS, IMG_TIME_BINS, DEVICE,
+    RESULTS_DIR,
 )
 from src.p2_ersp.ersp import compute_ersp_image
 from src.p3_classification.cnn.models import get_model
@@ -65,7 +84,7 @@ def compute_ensemble_per_subject(weight: float = 0.5, subjects: list = None) -> 
     accuracy and kappa."""
     subjects = subjects or SUBJECTS
 
-    ckpt = torch.load("results/spectnet_all.pth", map_location="cpu", weights_only=False)
+    ckpt = torch.load(str(RESULTS_DIR / "spectnet_all.pth"), map_location="cpu", weights_only=False)
     model = get_model("spectnet", n_channels=N_CHANNELS, n_freq=IMG_FREQ_BINS,
                       n_time=IMG_TIME_BINS, n_classes=2)
     model.load_state_dict(ckpt["state_dict"])
@@ -107,6 +126,16 @@ def compute_ensemble_per_subject(weight: float = 0.5, subjects: list = None) -> 
 
 
 def main():
+    raise RuntimeError(
+        "DEPRECATED: experiment_ensemble.py selected the ensemble weight on the "
+        "TEST set (sessions 4-5), which is hyperparameter leakage. Use "
+        "src/p3_classification/evaluation/experiment_ensemble_validated.py, "
+        "which selects the weight on a validation split of sessions 1-3. See the "
+        "module docstring and EXPERIMENTS.md -> 'Ensemble' for both numbers."
+    )
+
+
+def _main_leaky_kept_for_audit():
     parser = argparse.ArgumentParser(description="FBCSP+LDA / SpectNet ensemble")
     parser.add_argument("--weight", type=float, default=0.5,
                         help="Weight on FBCSP in the average (default 0.5 = simple average)")

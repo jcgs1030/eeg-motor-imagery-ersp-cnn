@@ -20,9 +20,20 @@ import pandas as pd
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from src.config import SUBJECTS, FIGURES_DIR
+from src.config import SUBJECTS, FIGURES_DIR, RESULTS_DIR
 from src.p3_classification.evaluation.diagnostic_stats_test import per_subject_acc_pooled, load_per_subject_csv
 from src.p3_classification.evaluation.experiment_ensemble import compute_ensemble_per_subject
+
+# The weight used for the ensemble in these figures. 0.6 is the weight the
+# DEPRECATED experiment_ensemble.py picked by sweeping on the TEST set - it is
+# kept here only so the committed figures still match the numbers they were
+# generated with. It does NOT match the headline result, which comes from
+# experiment_ensemble_validated.py (w chosen on a validation split of sessions
+# 1-3; 0.4-0.6 depending on seed, 77.4% +/- 0.3% across 5 seeds).
+# TODO (external review, C-2): regenerate these figures from the validated
+# selection so the figures and the reported number come from the same
+# procedure. Left as a separate step because it changes committed figures.
+ENSEMBLE_WEIGHT_TEST_TUNED = 0.6
 
 PALETTE = {
     "EEGNET": "#2C7BB6", "SHALLOWCONVNET": "#D7191C", "SPECTNET": "#1A9641",
@@ -41,23 +52,23 @@ def fig1_full_comparison():
         methods[f"{m.upper()} (pooled)"] = per_subject_acc_pooled(m)
 
     classical_specs = [
-        ("CSP+LDA", "results/csp_lda/metrics/per_subject_results.csv", "Classifier"),
-        ("CSP+SVM", "results/csp_lda/metrics/per_subject_results.csv", "Classifier"),
-        ("EA+CSP+LDA", "results/ea_csp_lda/metrics/per_subject_results.csv", "Classifier"),
-        ("EA+CSP+SVM", "results/ea_csp_lda/metrics/per_subject_results.csv", "Classifier"),
-        ("FBCSP+LDA", "results/fbcsp/metrics/per_subject_results.csv", "Classifier"),
-        ("FBCSP+SVM", "results/fbcsp/metrics/per_subject_results.csv", "Classifier"),
-        ("Riem-MDM", "results/riemannian/metrics/per_subject_results.csv", "Classifier"),
-        ("Riem-TS+LDA", "results/riemannian/metrics/per_subject_results.csv", "Classifier"),
+        ("CSP+LDA", str(RESULTS_DIR / "csp_lda" / "metrics" / "per_subject_results.csv"), "Classifier"),
+        ("CSP+SVM", str(RESULTS_DIR / "csp_lda" / "metrics" / "per_subject_results.csv"), "Classifier"),
+        ("EA+CSP+LDA", str(RESULTS_DIR / "ea_csp_lda" / "metrics" / "per_subject_results.csv"), "Classifier"),
+        ("EA+CSP+SVM", str(RESULTS_DIR / "ea_csp_lda" / "metrics" / "per_subject_results.csv"), "Classifier"),
+        ("FBCSP+LDA", str(RESULTS_DIR / "fbcsp" / "metrics" / "per_subject_results.csv"), "Classifier"),
+        ("FBCSP+SVM", str(RESULTS_DIR / "fbcsp" / "metrics" / "per_subject_results.csv"), "Classifier"),
+        ("Riem-MDM", str(RESULTS_DIR / "riemannian" / "metrics" / "per_subject_results.csv"), "Classifier"),
+        ("Riem-TS+LDA", str(RESULTS_DIR / "riemannian" / "metrics" / "per_subject_results.csv"), "Classifier"),
     ]
     for name, path, col in classical_specs:
         methods[name] = load_per_subject_csv(path, model_filter=name, model_col=col)
 
     for m in ["eegnet", "shallowconvnet", "spectnet"]:
         methods[f"{m.upper()} (subj-specific)"] = load_per_subject_csv(
-            "results/subject_specific/metrics/per_subject_results.csv", model_filter=m)
+            str(RESULTS_DIR / "subject_specific" / "metrics" / "per_subject_results.csv"), model_filter=m)
 
-    ens_rows = compute_ensemble_per_subject(weight=0.6)
+    ens_rows = compute_ensemble_per_subject(weight=ENSEMBLE_WEIGHT_TEST_TUNED)
     methods["ENSEMBLE (FBCSP+SpectNet)"] = {r["subject"]: r["acc_ens"] for r in ens_rows}
 
     stats = []
@@ -109,12 +120,13 @@ def fig1_full_comparison():
 
 def fig2_ensemble_per_subject():
     """Slope plot: FBCSP, SpectNet pooled, Ensemble, one line per subject."""
-    rows = compute_ensemble_per_subject(weight=0.6)
+    rows = compute_ensemble_per_subject(weight=ENSEMBLE_WEIGHT_TEST_TUNED)
     rows = sorted(rows, key=lambda r: r["subject"])
 
     fig, ax = plt.subplots(figsize=(8, 6))
     xs = [0, 1, 2]
-    labels = ["FBCSP+LDA", "SpectNet\n(pooled)", "Ensemble\n(w=0.6)"]
+    labels = ["FBCSP+LDA", "SpectNet\n(pooled)",
+              f"Ensemble\n(w={ENSEMBLE_WEIGHT_TEST_TUNED})"]
     for r in rows:
         ys = [r["acc_fbcsp"] * 100, r["acc_cnn"] * 100, r["acc_ens"] * 100]
         color = "#44AA99" if ys[2] >= max(ys[0], ys[1]) else "#D7191C"
