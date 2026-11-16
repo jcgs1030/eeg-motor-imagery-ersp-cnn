@@ -63,7 +63,7 @@ def compute_band_curves(sig_trials: np.ndarray, fmin: float, fmax: float):
 
 def plot_classic_erd_curve(subjects: list, label: str, save_fig: bool = True):
     fig, axes = plt.subplots(1, 2, figsize=(13, 4.5))
-    for ax, (fmin, fmax, band_name) in zip(axes, [(8, 13, "Mu (8-13Hz)"), (14, 30, "Beta (14-30Hz)")]):
+    for ax, (fmin, fmax, band_name) in zip(axes, [(8, 13, "Mu (8–13 Hz)"), (14, 30, "Beta (14–30 Hz)")]):
         for cls_name, color in [("right", "#c0392b"), ("left", "#2980b9")]:
             all_curves, t_curve = [], None
             for subj in subjects:
@@ -86,14 +86,14 @@ def plot_classic_erd_curve(subjects: list, label: str, save_fig: bool = True):
             ax.fill_between(t_curve, mean_curve - sem, mean_curve + sem, color=color, alpha=0.15)
         ax.axhline(0, color="black", lw=0.8)
         ax.axvline(0, color="gray", lw=0.8, ls="--")
-        ax.set_title(f"{band_name} — {label}, canal C3")
-        ax.set_xlabel("Tiempo (s, relativo al cue)")
-        ax.set_ylabel("% cambio de potencia vs. baseline\n(negativo = ERD, positivo = ERS)")
+        ax.set_title(f"{band_name} — {label}, channel C3")
+        ax.set_xlabel("Time relative to cue (s)")
+        ax.set_ylabel("Power change vs. baseline (%)\n(negative = ERD, positive = ERS)")
         ax.legend(fontsize=9)
         ax.spines["top"].set_visible(False)
         ax.spines["right"].set_visible(False)
 
-    fig.suptitle(f"Curva clásica ERD/ERS (estilo Pfurtscheller) — {label}, C3, Left vs Right", fontweight="bold")
+    fig.suptitle(f"ERD/ERS time course (Pfurtscheller style) — {label}, C3, left vs. right hand", fontweight="bold")
     plt.tight_layout()
 
     if save_fig:
@@ -114,7 +114,7 @@ def main():
     if args.subject:
         plot_classic_erd_curve([args.subject], f"S{args.subject:02d}")
     else:
-        plot_classic_erd_curve(SUBJECTS, "Grand-average, 9 sujetos")
+        plot_classic_erd_curve(SUBJECTS, "grand average, 9 subjects")
 
 
 if __name__ == "__main__":
