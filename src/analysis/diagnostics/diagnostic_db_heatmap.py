@@ -66,9 +66,9 @@ def main():
                 counts[cls] += int(mask.sum())
 
     fig, axes = plt.subplots(N_CHANNELS, 2, figsize=(10, 4 * N_CHANNELS))
-    title_scope = f"Sujeto S{args.subject:02d}" if args.subject is not None else "Grand-average — 9 sujetos pooled"
+    title_scope = f"Subject S{args.subject:02d}" if args.subject is not None else "grand average, 9 subjects pooled"
     fig.suptitle(
-        f"ERSP en dB reales — {title_scope} — colormap '{args.cmap}'",
+        f"ERSP in dB — {title_scope}",
         fontsize=11, fontweight="bold"
     )
     for ch_i, ch_name in enumerate(CHANNELS[:N_CHANNELS]):
@@ -82,8 +82,8 @@ def main():
             )
             ax.axvline(0, color="black", lw=1, ls="--")
             ax.set_title(f"{ch_name} — {name} (n={counts[cls]})", fontsize=9)
-            ax.set_xlabel("Tiempo (s)")
-            ax.set_ylabel("Frecuencia (Hz)")
+            ax.set_xlabel("Time (s)")
+            ax.set_ylabel("Frequency (Hz)")
             plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04, label="ERSP (dB)")
     plt.tight_layout()
 
