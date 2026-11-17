@@ -155,6 +155,11 @@ Experiments 1–2 and every classical baseline in Experiments 3–5b. The ERD/ER
 physiological effect is present in the data and recoverable once the baseline window
 is long enough to avoid STFT edge contamination.
 
+Two distinct problems were conflated in the root-cause analysis above, and only
+one of them was fixed. See "What the fix did not solve" below — the distinction
+matters for how this is presented, because the fix is sometimes described as
+having removed post-cue leakage from the baseline, and it did not.
+
 ### Fix applied
 
 `EPOCH_TMIN` extended from -0.5s to **-3.0s** (the full pre-cue fixation period),
@@ -163,13 +168,71 @@ own extraction edge), and new `ANALYSIS_TMIN`/`ANALYSIS_TMAX` (-0.5/4.0, unchang
 mark the output window that actually gets resized to `IMG_TIME_BINS`. `compute_ersp_image()`
 now computes the STFT baseline reference from frames inside `BASELINE`, in absolute
 time relative to cue onset, then crops to the analysis window before resizing — the
-output tensor shape is unchanged, `(3, 22, 128)` per trial. `compute_ersp_image_wavelet()`
-was updated the same way for consistency.
+output tensor shape is unchanged, `(3, 22, 128)` per trial at the time of this
+fix (now `(3, 22, 32)` — see "ERSP Resolution / Blur Sweep").
+`compute_ersp_image_wavelet()` was updated the same way for consistency.
 
 All epochs and ERSP tensors were regenerated (`preprocessing.py --subject all --suffix both`,
 then `ersp.py --subject all --suffix both`). Trial counts are essentially unchanged
 (6519/6520 total — one S06 evaluation trial now fails the artefact-rejection threshold
 because the extended pre-cue window happens to contain an artefact there; negligible).
+
+### What the fix did not solve — post-cue signal is still inside the baseline
+
+The root-cause analysis above gives two reasons the 0.5 s baseline was wrong,
+and they are independent:
+
+1. **The STFT zero-padding taper** at the extracted trial's own edge
+   (`padded=True`) reached into the baseline frames. This *was* fixed:
+   `BASELINE` now sits 2 s inside the extracted epoch, far from any edge.
+2. **Each baseline frame straddles the cue.** Frames are selected by their
+   **centre** (`bl_mask = (t_abs >= BASELINE[0]) & (t_abs <= BASELINE[1])`),
+   but a frame is `STFT_WIN_LEN` wide, so it carries signal from
+   centre ± 0.512 s. This was **not** fixed, only diluted.
+
+Measured with the parameters as committed
+(`src/analysis/diagnostics/diagnostic_baseline_frame_support.py`):
+
+| | Value |
+|---|---|
+| STFT window / half-support | 1.024 s / ±0.512 s |
+| Frames selected by `BASELINE = (-1.0, 0.0)` | 28 (centres -0.984 .. -0.012 s) |
+| **Frames whose support crosses the cue** | **14 — 50% of the reference** |
+| Most post-cue signal inside one baseline frame | **0.500 s** |
+
+So half of the frames that define "pre-stimulus power" contain motor
+imagery. The pre-fix window was worse in aggregate — with only ~3 frames
+available, essentially all of them straddled the cue *and* sat on the padding
+taper — but the per-frame leakage is unchanged, because it is set by
+`STFT_WIN_LEN`, not by where the window is placed. What improved is that the
+contaminated frames are now a minority share of a 28-frame average instead of
+the whole average.
+
+This is consistent with, and explains, the diagnostic result recorded above
+that nobody could account for at the time: re-estimating the baseline by an
+independent Welch periodogram over the *same* 0.5 s window produced **no
+visible change** (`diagnostic_fixed_baseline.py`). It was read then as "frame
+reuse is not the cause, the window is simply too short". The sharper reading
+is that a 0.5 s window cannot be measured cleanly by a 1.024 s estimator at
+all — any estimator wide enough to resolve 8 Hz needs more than 0.5 s of
+signal, so the window length and the estimator width are the same constraint.
+
+**A clean fix exists and is cheap.** The frame grid already contains 55
+fully pre-cue frames: `BASELINE = (-1.52, -0.52)` keeps the same 1 s width
+and the same 2 s edge buffer, while every selected frame's support ends at or
+before t = 0. It is **not applied here**, because changing `BASELINE` changes
+every ERSP tensor and would require reprocessing and retraining Experiments
+1–2 for a fourth time, which is out of scope while the classification
+pipeline is frozen (same reasoning as the Fifth Diagnostic Finding). It is
+recorded as a quantified, reproducible known limitation — and, unlike the
+Fifth Finding, with a concrete one-line change ready to apply if the pipeline
+is ever reopened.
+
+**For the thesis:** the baseline-window fix should be described as removing
+*zero-padding edge contamination* and *reducing* post-cue leakage from ~100%
+to ~50% of the reference frames, not as eliminating it. The claim in the
+"Root cause" subsection above — "every baseline frame already leaks signal
+from after the cue" — is still true of 14 of the 28 frames today.
 
 ### Reprocessing outcome
 
@@ -963,10 +1026,10 @@ to outperform deep learning methods when training data is limited.
 
 ### Results (mean ± std across 9 subjects)
 
-| Classifier | Accuracy | Kappa |
-|---|---|---|
+| Classifier | Accuracy | F1-score | Kappa |
+|---|---|---|---|
 | CSP+LDA | 71.0% ± 12.6% | 69.8% ± 13.3% | 0.419 ± 0.252 |
-| CSP+SVM | 72.5% ± 12.0% | 71.4% ± 13.1% | 0.450 ± 0.241 |
+| CSP+SVM | 72.5% ± 12.0% | 71.4% ± 13.1% | 0.450 ± 0.240 |
 
 ### Analysis
 CSP, which operates directly on raw filtered epochs and was never exposed to
@@ -998,22 +1061,79 @@ Applied independently to training (sessions 1–3) and test (sessions 4–5)
 before CSP spatial filtering. The test set is aligned using its own mean
 covariance (unsupervised — no test labels used).
 
+> **Note before reading the results:** placing EA *before* MNE's `CSP` makes
+> the whole step a no-op, because `CSP` whitens internally and is therefore
+> invariant to it. This was found after the fact and is documented in the
+> Analysis below; the results table is kept because it is what the committed
+> CSVs contain.
+
 ### Results (mean ± std across 9 subjects)
 
-| Classifier | Accuracy | Kappa |
-|---|---|---|
+| Classifier | Accuracy | F1-score | Kappa |
+|---|---|---|---|
 | EA+CSP+LDA | 71.0% ± 12.6% | 69.8% ± 13.3% | 0.419 ± 0.252 |
-| EA+CSP+SVM | 72.5% ± 12.0% | 71.4% ± 13.1% | 0.450 ± 0.241 |
+| EA+CSP+SVM | 72.5% ± 12.0% | 71.4% ± 13.1% | 0.450 ± 0.240 |
 
-### Analysis
-EA+CSP produces results essentially identical to plain CSP (Experiment 3) —
-71.0–72.5% mean accuracy either way. This means the T→E domain shift in this
-dataset, to the extent it exists, is not primarily a **scaling or orientation**
-difference in the covariance space (which EA corrects) — session-level
-whitening neither helps nor hurts here. This is a useful negative result: it
-rules out one specific hypothesis about the nature of the offline→online
-shift, without needing EA to "fix" anything for the pooled-CNN result in
-Experiment 1 to make sense.
+### Analysis — corrected: this experiment is algebraically a no-op
+
+**Earlier reading, now retracted.** This section previously concluded that
+EA "neither helps nor hurts", and read that as a useful negative result
+ruling out a scaling/orientation difference in covariance space as the
+nature of the T→E shift. That conclusion does not hold, and the reason is
+visible in the numbers: EA+CSP does not merely land *close* to plain CSP, it
+reproduces it **exactly** — same accuracy, precision, recall, F1 and kappa,
+to every printed digit, on all 9 subjects and both classifiers. Compare
+`results/ea_csp_lda/metrics/per_subject_results.csv` against
+`results/csp_lda/metrics/per_subject_results.csv`: the two files are
+identical apart from the method name. Two genuinely different pipelines do
+not agree to four decimal places on 9 subjects.
+
+**Root cause.** MNE's `CSP` already whitens by the composite covariance of
+the training set, which makes its spatial filters equivariant to any
+invertible linear transform of the data. Let `W` be the filters CSP learns on
+raw epochs and `A = R_train^(-1/2)` the EA whitener. CSP trained on `A·X`
+learns `W·A^(-1)`, so the log-variance features
+
+```
+log var( W·A^(-1) · A·X )  =  log var( W·X )
+```
+
+are unchanged. The evaluation split is whitened by its *own*
+`R_test^(-1/2)`, a different matrix — so one might expect the test features
+at least to differ. They do not, because the whitening CSP applies internally
+absorbs that transform too.
+
+**Measured** (`src/analysis/diagnostics/diagnostic_ea_invariance.py`, all 9
+subjects): the CSP log-variance features are identical to float64 epsilon in
+both splits, and the LDA predictions are identical on 9/9 subjects.
+
+| | Largest difference across all 9 subjects |
+|---|---|
+| CSP features, training split | 2.2e-13 |
+| CSP features, evaluation split | 1.6e-13 |
+| Predicted labels | identical, 9/9 subjects |
+
+**What this means for the thesis.** Experiment 4 is not evidence about the
+offline→online shift in either direction — it *cannot* differ from
+Experiment 3, so it carries no information about the data at all. It should
+be reported as what it is: a confirmation that CSP's internal whitening makes
+it invariant to session-level Euclidean Alignment, which is a correct and
+citable property of the method (and consistent with EA being introduced in
+the transfer-learning literature for *cross-subject* pipelines, where the
+alignment happens across subjects rather than being re-estimated inside the
+same subject's own train and test splits).
+
+**What would actually test the hypothesis.** EA has to feed a classifier that
+does not whiten internally. Two options, neither run here:
+
+1. EA followed by log-variance of the raw channels + LDA (no CSP stage).
+2. EA followed by the Riemannian branch of Experiment 5b — tangent-space
+   features are sensitive to the manifold reference point, so re-centring
+   each session is not absorbed.
+
+Until one of those is run, the claim "the T→E shift is not a covariance
+scaling/orientation effect" is unsupported by this project and should not
+appear in the thesis.
 
 ---
 
@@ -1037,9 +1157,9 @@ concatenated (7 × 2 = 14 features) before classification.
 
 ### Results (mean ± std across 9 subjects)
 
-| Classifier | Accuracy | Kappa |
-|---|---|---|
-| FBCSP+LDA | 75.9% ± 13.4% | 75.5% ± 13.7% | 0.519 ± 0.269 |
+| Classifier | Accuracy | F1-score | Kappa |
+|---|---|---|---|
+| FBCSP+LDA | 75.9% ± 13.4% | 75.5% ± 13.7% | 0.518 ± 0.269 |
 | FBCSP+SVM | 73.6% ± 13.5% | 72.7% ± 14.5% | 0.472 ± 0.271 |
 
 ### Analysis
@@ -1074,17 +1194,23 @@ with 3-channel data.
 
 ### Results (mean ± std across 9 subjects)
 
-| Classifier | Accuracy | Kappa |
-|---|---|---|
+| Classifier | Accuracy | F1-score | Kappa |
+|---|---|---|---|
 | Riem-MDM | 70.8% ± 13.8% | 69.2% ± 15.4% | 0.416 ± 0.276 |
-| Riem-TS+LDA | 72.9% ± 13.4% | 72.0% ± 13.9% | 0.459 ± 0.268 |
+| Riem-TS+LDA | 72.9% ± 13.4% | 71.9% ± 13.9% | 0.458 ± 0.268 |
 
 ### Analysis
 Riemannian TS+LDA (72.9%) performs comparably to plain CSP+LDA (71.0%) and
-EA+CSP+LDA (71.0%), and slightly below FBCSP+LDA (75.9%). The theoretical
+EA+CSP+LDA (71.0%, which is the same number by construction — see
+Experiment 4), and slightly below FBCSP+LDA (75.9%). The theoretical
 robustness of Riemannian geometry to certain covariance transformations does
-not translate into a clear advantage on this specific offline→online shift —
-consistent with EA's similarly neutral effect in Experiment 4.
+not translate into a clear advantage on this specific offline→online shift.
+
+(This paragraph previously added "consistent with EA's similarly neutral
+effect in Experiment 4" as corroboration. That has been removed: EA's effect
+in Experiment 4 is neutral because the step is algebraically inert under CSP,
+not because of anything about this dataset, so it cannot corroborate
+anything. Experiment 5b stands on its own evidence.)
 
 Taken together, Experiments 3–5b (CSP, EA, FBCSP, MDM, TS+LDA) all land in the
 70–76% range: the T→E shift in BCI-IV-2b is real (accuracy is well below what
@@ -1111,9 +1237,9 @@ and "Experiment 2" above.
 |---|---|---|---|---|
 | **Ensemble: FBCSP+LDA + SpectNet, 22x32 (w chosen on validation, mean of 5 seeds)** | **follow-up** | **77.4% ± 0.3%** | — | **0.548** |
 | Ensemble: FBCSP+LDA + SpectNet, earlier checkpoint (w=0.5, seed 42) | follow-up | 78.7% ± 12.8% | — | 0.574 |
-| FBCSP+LDA | 5a | 75.9% ± 13.4% | 75.5% ± 13.7% | 0.519 |
+| FBCSP+LDA | 5a | 75.9% ± 13.4% | 75.5% ± 13.7% | 0.518 |
 | FBCSP+SVM | 5a | 73.6% ± 13.5% | 72.7% ± 14.5% | 0.472 |
-| Riem-TS+LDA | 5b | 72.9% ± 13.4% | 72.0% ± 13.9% | 0.459 |
+| Riem-TS+LDA | 5b | 72.9% ± 13.4% | 71.9% ± 13.9% | 0.458 |
 | CSP+SVM | 3 | 72.5% ± 12.0% | 71.4% ± 13.1% | 0.450 |
 | EA+CSP+SVM | 4 | 72.5% ± 12.0% | 71.4% ± 13.1% | 0.450 |
 | **SpectNet (pooled, all 9)** | **1** | **71.7%** | 71.7% | 0.434 |
@@ -1126,7 +1252,7 @@ and "Experiment 2" above.
 | ShallowConvNet (pooled, all 9) | 1 | 60.3% | 60.3% | 0.205 |
 | ShallowConvNet (subject-specific) | 2 | 54.5% ± 6.9% | 52.6% ± 8.6% | 0.090 |
 
-**Best single method: FBCSP+LDA at 75.9% mean accuracy (Kappa 0.519)**, still
+**Best single method: FBCSP+LDA at 75.9% mean accuracy (Kappa 0.518)**, still
 clearly ahead of every individual ERSP+CNN method even after the hop fix
 recovered some ground for SpectNet pooled (70.0%→71.7%). **Best result
 overall: the FBCSP+SpectNet ensemble** (w chosen on a validation split, not
@@ -1370,6 +1496,12 @@ in "Experiment 2" above.
    generalise from training to evaluation sessions, collapsing them to chance.
    Fixed by extending the pre-cue window to the full 3s fixation period. See
    "Diagnostic Finding — Baseline Window Contamination" above.
+   **Only partially fixed:** the fix removed the zero-padding edge
+   contamination, but because baseline frames are selected by their centre and
+   each frame is 1.024s wide, 14 of the 28 selected frames (50%) still carry up
+   to 0.5s of post-cue signal. `BASELINE = (-1.52, -0.52)` would be fully
+   pre-cue at the same width. Quantified and left as a known limitation — see
+   "What the fix did not solve".
 
 4. **Subject-pooling is viable for EEG, once the baseline bug is fixed:**
    pooled CNN models (Experiment 1) went from chance (48–50%) to genuinely
@@ -1440,7 +1572,19 @@ in "Experiment 2" above.
     promising direction, not a fix on its own. The architecture's
     square→log nonlinearity remains the leading unconfirmed hypothesis.
 
-13. **ERSP images were cut from 22x128 to 22x32 with no significant loss**
+13. **Experiment 4 (Euclidean Alignment) carries no information:** EA placed
+    before MNE's `CSP` is algebraically a no-op, because `CSP` whitens
+    internally and is therefore invariant to it. The CSP features are
+    identical to float64 epsilon and the predictions identical on 9/9
+    subjects, which is why the Experiment 3 and Experiment 4 result files
+    match to four decimal places. The earlier reading ("rules out a
+    covariance scaling/orientation explanation of the T→E shift") is
+    retracted: the experiment cannot test that hypothesis. Testing it
+    requires EA in front of a classifier that does not whiten (raw
+    log-variance + LDA, or the Riemannian branch). See
+    `src/analysis/diagnostics/diagnostic_ea_invariance.py`.
+
+14. **ERSP images were cut from 22x128 to 22x32 with no significant loss**
     (pooled sweep: 69.4% vs. 70.0%; subject-specific SpectNet 69.5% vs.
     70.8%, p=0.074, n=9), 4x smaller per trial and ~7x fewer SpectNet
     parameters. A time-only anti-aliasing blur does not help. The 32-bin

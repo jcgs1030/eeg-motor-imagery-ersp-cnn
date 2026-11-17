@@ -59,10 +59,21 @@ FILT_METHOD   = "fir"  # FIR filter with Hamming window (MNE default)
 # all 45 GDF files), NOT just -0.5s. This gives the baseline reference window
 # enough buffer before the epoch's own extraction edge to avoid STFT
 # zero-padding contamination (see EXPERIMENTS.md "Diagnostic Finding" and its
-# reprocessing follow-up). BASELINE is a clean 1s window, 2s away from that edge.
+# reprocessing follow-up).
+#
+# BASELINE sits 2s inside the extracted epoch, so it is clear of that
+# extraction edge. It is NOT clear of the cue: compute_ersp_image() selects
+# baseline frames by their CENTRE, and an STFT frame is 1.024s wide, so a
+# frame centred at -0.012s still carries 0.5s of post-cue signal. 14 of the
+# 28 selected frames (50%) straddle t=0. Measured by
+# analysis/diagnostics/diagnostic_baseline_frame_support.py; documented in
+# EXPERIMENTS.md -> "What the fix did not solve". A fully pre-cue window of
+# the same width is available at (-1.52, -0.52) and would fix it, but
+# changing BASELINE invalidates every cached ERSP tensor, so it is left as a
+# quantified known limitation while the classification pipeline is frozen.
 EPOCH_TMIN    = -3.0  # s before cue onset (full pre-cue fixation period)
 EPOCH_TMAX    =  4.0  # s after cue onset
-BASELINE      = (-1.0, 0.0)   # clean baseline reference window for ERSP normalisation
+BASELINE      = (-1.0, 0.0)   # baseline reference window for ERSP normalisation
 
 # ERSP analysis/output window — this is the time axis that actually gets
 # resized to IMG_TIME_BINS and fed to the models. Unchanged from the original
