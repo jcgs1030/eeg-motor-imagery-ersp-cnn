@@ -38,13 +38,14 @@ Each stage reads the previous stage's output from `data/processed/`.
 
 ```
 eeg-motor-imagery-ersp-cnn/
-├── README.md
+├── README.md · LICENSE
 ├── EXPERIMENTS.md                 ← full experimental log: every result, fix and caveat
 ├── pyproject.toml · uv.lock · .python-version
 ├── data/
 │   ├── raw/                       ← GDF files go here (B0101T.gdf ... B0905E.gdf)
 │   └── processed/                 ← S??{T,E}-epo.fif (stage 1) and S??{T,E}-ersp.npz (stage 2)
-├── notebooks/                     ← dataset exploration
+├── notebooks/                     ← dataset exploration (runnable: `uv run jupyter notebook`)
+├── tests/                         ← 30 unit tests, `uv run pytest`
 ├── src/
 │   ├── config.py                  ← all parameters, shared by every stage
 │   │
