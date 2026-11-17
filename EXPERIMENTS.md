@@ -51,13 +51,18 @@ filtering, and feature extraction were all correct — only the evaluation label
 
 **Script:** `src/p1_preprocessing/preprocessing.py`
 
-| Step | Parameter | Value |
-|---|---|---|
-| Channel selection | C3, Cz, C4 | Motor cortex electrodes |
-| Bandpass filter | 8–30 Hz, FIR Hamming | Mu and beta bands |
-| Epoch window | −0.5 to 4.0 s | Relative to cue onset |
-| Baseline correction | None (removed in fix, see below) | ERSP handles it internally |
-| Artifact rejection | Peak-to-peak threshold 100 µV | Per-channel per-epoch |
+| Step | Parameter | Value (current) | Originally |
+|---|---|---|---|
+| Channel selection | C3, Cz, C4 | Motor cortex electrodes | — |
+| Bandpass filter | 8–30 Hz, FIR Hamming | Mu and beta bands | — |
+| Epoch window | `EPOCH_TMIN`..`EPOCH_TMAX` | **−3.0 to 4.0 s** relative to cue onset | −0.5 to 4.0 s, until the baseline-window fix below |
+| Baseline correction | — | None (`baseline=None`); the ERSP normalises by baseline power instead | `baseline=(-0.5, 0.0)`, removed in commit `3a242de` |
+| Artifact rejection | `REJECT_THRESH` | Peak-to-peak threshold 100 µV, per channel per epoch | — |
+| ICA | — | Removed: with 3 channels and no EOG reference it is the identity map | FastICA, 3 components, off by default |
+
+> The "Originally" column exists because this log is chronological: several
+> tables below are snapshots from before a fix and are labelled as such.
+> `src/config.py` is always the authority for current values.
 
 **Fix applied (commit `3a242de`):** MNE's amplitude baseline correction was initially applied
 (`baseline=(-0.5, 0.0)`) before ERSP computation. Since the ERSP formula already normalises
@@ -77,14 +82,16 @@ relative to a pre-stimulus baseline:
 ERSP(f, t) = 10 · log₁₀[ P(f, t) / P_baseline(f) ]
 ```
 
-| Parameter | Value |
-|---|---|
-| Transform | STFT, Hann window |
-| Window length | 256 samples (1.024 s at 250 Hz) |
-| Overlap | 75% (hop = 64 samples) |
-| Frequency range | 8–30 Hz → 22 bins |
-| Time bins | 128 (after resize) |
-| Output shape | (3 channels, 22 freq, 128 time) per trial |
+| Parameter | Value (current) | Originally |
+|---|---|---|
+| Transform | STFT, Hann window | — |
+| Window length | 256 samples (1.024 s at 250 Hz) | — |
+| Hop / overlap | **9 samples (36 ms), ~96.5% overlap** | 64 samples, 75% — until the STFT-hop fix (Third Diagnostic Finding) |
+| Baseline reference | `BASELINE` = **(−1.0, 0.0) s** | (−0.5, 0.0) s — until the baseline-window fix |
+| Analysis window | `ANALYSIS_TMIN`..`TMAX` = **−0.5 to 4.0 s** | same |
+| Frequency range | 8–30 Hz → 22 bins | — |
+| Time bins | **32** (after resize) | 128 — until the resolution sweep |
+| Output shape | **(3 channels, 22 freq, 32 time)** per trial | (3, 22, 128) |
 
 **Fix applied (commit `3a242de`):** The original code normalised each ERSP image
 independently to [0, 1] using per-trial min-max scaling. This destroyed inter-trial
@@ -597,8 +604,8 @@ is the cross-experiment ranking statistically real, can ShallowConvNet's
 collapse be fixed cheaply, does combining the best classical and CNN methods
 help, and does data augmentation help with the small per-subject sample size.
 None of this changes the production pipeline or any committed per-experiment
-result file (all scripts are exploratory, under `src/diagnostic_*.py` /
-`src/experiment_*.py`).
+result file (all scripts are exploratory, under `src/analysis/diagnostics/`,
+`src/analysis/experiments/` and `src/p3_classification/evaluation/`).
 
 ### 1. Paired statistical test (`src/p3_classification/evaluation/diagnostic_stats_test.py`)
 
@@ -783,7 +790,9 @@ subject's own validation loss (patience=10). Produces 9 specialised models.
 **Global mode**: unfreeze everything, continue training the SAME pooled
 checkpoint on the full 9-subject pooled training set again at a lower
 learning rate (3e-5), early stopping as before. Produces one model (answers
-"fine-tuning sobre el promedio/pooled en vez de por sujeto").
+"fine-tuning on the pooled/average model instead of per subject" — the
+advisor's wording, in Spanish: "fine-tuning sobre el promedio/pooled en vez
+de por sujeto").
 
 | | Mean accuracy | vs. pooled baseline (71.5%) |
 |---|---|---|
@@ -829,11 +838,18 @@ for the full cohort. Two variants: subject 1 only, and all 9 subjects.
 
 ### Models
 
-| Architecture | Parameters | Reference |
-|---|---|---|
-| EEGNet | 6,194 | Lawhern et al., J. Neural Eng., 2018 |
-| ShallowConvNet | 38,442 | Schirrmeister et al., Hum. Brain Mapp., 2017 |
-| SpectNet | 604,146 | Ruffini et al., arXiv, 2018 |
+Parameter counts depend on the input width, because every model sizes its
+classifier head from the flattened conv output:
+
+| Architecture | Parameters at 22×32 (current) | Parameters at 22×128 | Reference |
+|---|---|---|---|
+| EEGNet | 6,098 | 6,194 | Lawhern et al., J. Neural Eng., 2018 |
+| ShallowConvNet | 36,242 | 38,442 | Schirrmeister et al., Hum. Brain Mapp., 2017 |
+| SpectNet | 88,050 | 604,146 | Ruffini et al., arXiv, 2018 |
+
+The single-subject (S01) rows further down, and
+`results/metrics/comparative_results_1.csv`, still carry the 22×128 counts:
+those models were not retrained after the switch to 32 time bins.
 
 ### Results
 
@@ -1233,6 +1249,10 @@ across 5 train/val seeds (each already a mean across 9 subjects). CNN rows
 (Exp 1-2) are the 22x128 results; the 22x32 numbers are in "Experiment 1"
 and "Experiment 2" above.
 
+Rows are ordered by **accuracy**, descending, with the two ensemble rows
+first (they are the headline result). An earlier version of this table mixed
+orderings and listed CSP+LDA below EEGNet pooled despite scoring 1 pp higher.
+
 | Method | Exp | Accuracy | F1-score | Kappa |
 |---|---|---|---|---|
 | **Ensemble: FBCSP+LDA + SpectNet, 22x32 (w chosen on validation, mean of 5 seeds)** | **follow-up** | **77.4% ± 0.3%** | — | **0.548** |
@@ -1243,11 +1263,11 @@ and "Experiment 2" above.
 | CSP+SVM | 3 | 72.5% ± 12.0% | 71.4% ± 13.1% | 0.450 |
 | EA+CSP+SVM | 4 | 72.5% ± 12.0% | 71.4% ± 13.1% | 0.450 |
 | **SpectNet (pooled, all 9)** | **1** | **71.7%** | 71.7% | 0.434 |
-| SpectNet (subject-specific) | 2 | 70.8% ± 13.1% | 68.7% ± 17.0% | 0.416 |
-| EEGNet (pooled, all 9) | 1 | 70.0% | 69.9% | 0.401 |
 | CSP+LDA | 3 | 71.0% ± 12.6% | 69.8% ± 13.3% | 0.419 |
-| EA+CSP+LDA | 4 | 71.0% ± 12.6% | 69.8% ± 13.3% | 0.419 |
+| EA+CSP+LDA (= CSP+LDA by construction, see Exp 4) | 4 | 71.0% ± 12.6% | 69.8% ± 13.3% | 0.419 |
+| SpectNet (subject-specific) | 2 | 70.8% ± 13.1% | 68.7% ± 17.0% | 0.416 |
 | Riem-MDM | 5b | 70.8% ± 13.8% | 69.2% ± 15.4% | 0.416 |
+| EEGNet (pooled, all 9) | 1 | 70.0% | 69.9% | 0.401 |
 | EEGNet (subject-specific) | 2 | 69.0% ± 11.6% | 68.5% ± 12.0% | 0.379 |
 | ShallowConvNet (pooled, all 9) | 1 | 60.3% | 60.3% | 0.205 |
 | ShallowConvNet (subject-specific) | 2 | 54.5% ± 6.9% | 52.6% ± 8.6% | 0.090 |
@@ -1279,6 +1299,13 @@ found to be statistically significant, or is it picking up on something
 else? Two complementary attribution methods, computed only on
 correctly-classified evaluation-session trials, pooled across all 9
 subjects (992 Left, 1044 Right trials):
+
+> **Resolution note:** this whole section was computed on the 22x128 ERSP
+> tensors, with the 22x128 SpectNet pooled checkpoint, before
+> `IMG_TIME_BINS` dropped to 32. It was not regenerated at 22x32, so the
+> image sizes quoted below are 128-bin sizes. The conclusions are about
+> *where* in time-frequency the model attends, which is reported in seconds
+> and hertz and is not affected by the bin count.
 
 **1. Grad-CAM** (Selvaraju et al., 2017) at the last convolutional layer
 (`conv2`, post-ReLU, pre-`pool2`, native resolution 21x29, upsampled to the
@@ -1417,8 +1444,8 @@ S06: 66.5% vs. 76.5%/77.4%).
 ### Interpretation
 
 Not a fair fight against a from-scratch-designed small CNN like SpectNet
-(66K params) or a classical method tuned specifically for this exact
-problem: AST's patch embedding and position embeddings - arguably the part
+(88K params at 22x32; 66K was a misreading of an earlier count) or a
+classical method tuned specifically for this exact problem: AST's patch embedding and position embeddings - arguably the part
 of the architecture most responsible for learning *where* in a spectrogram
 to look - start from scratch here, because our spectrograms are far smaller
 than what AST was pretrained on, and only the deepest, most task-specific
@@ -1426,7 +1453,7 @@ pretrained knowledge (general audio transformer blocks) transfers at all.
 With 85M parameters, mostly frozen, and only ~1.4k pooled training trials,
 there is a real risk the trainable 14.3M-parameter portion simply does not
 have enough signal to learn a good classifier from scratch on this task,
-while a 66K-parameter SpectNet trained end-to-end on the same data does.
+while an 88K-parameter SpectNet trained end-to-end on the same data does.
 This is a genuine negative result for this specific adaptation, not
 necessarily evidence against transformers for EEG in general - a GPU
 environment permitting the native 128x1024 resolution (position embeddings

@@ -386,7 +386,7 @@ def _plot_comparison_vs_cnn(df_csp: pd.DataFrame):
     fig.savefig(str(CSP_FIGS / "comparison_cnn_vs_csp.png"), dpi=150,
                 bbox_inches="tight")
     plt.close(fig)
-    print(f"  Comparison figure saved: comparison_cnn_vs_csp.png")
+    print("  Comparison figure saved: comparison_cnn_vs_csp.png")
 
 
 # ── Summary tables ────────────────────────────────────────────────────────────
@@ -429,9 +429,9 @@ def _save_tables(df: pd.DataFrame):
 
 def run(subjects: list):
     print(f"\n{'═'*54}")
-    print(f"  CSP baselines — BCI-IV-2b")
+    print("  CSP baselines — BCI-IV-2b")
     print(f"  Subjects: {subjects}")
-    print(f"  Classifiers: CSP+LDA, CSP+SVM")
+    print("  Classifiers: CSP+LDA, CSP+SVM")
     print(f"  MI window: {MI_TMIN}–{MI_TMAX} s | CSP components: {N_CSP_COMPS}")
     print(f"{'═'*54}\n")
 

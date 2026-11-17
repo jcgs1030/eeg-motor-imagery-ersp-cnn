@@ -109,6 +109,13 @@ use the ERSP images. The ensemble joins both branches.
 
 ### Where to find what
 
+Paths under `results/figures/`, `results/metrics/` and `*.pth` are
+**gitignored as regenerable output**: they exist after you run the pipeline,
+not in a fresh clone. The committed exceptions are
+`results/baseline_bug_before_fix/` (historical evidence images),
+`results/trial_timeline_verification.txt`, and the per-method
+`results/<method>/metrics/*.csv` and `figures/*.png` tables.
+
 | Question | Code | Results |
 |---|---|---|
 | How is the raw EEG cleaned? | `src/p1_preprocessing/preprocessing.py`, `src/config.py` | `results/figures/` (preprocessing figures) |
@@ -118,7 +125,7 @@ use the ERSP images. The ensemble joins both branches.
 | Pooled CNN results (Exp 1) | `src/p3_classification/cnn/train.py`, `evaluation/evaluate.py` | `results/*_all.pth`, `results/metrics/`, `results/figures/` |
 | Subject-specific CNN results (Exp 2) | `src/p3_classification/cnn/train_subject_specific.py` | `results/subject_specific/` |
 | Classical baselines (Exp 3–5) | `src/p3_classification/classical/` | `results/csp_lda/`, `results/ea_csp_lda/`, `results/fbcsp/`, `results/riemannian/` |
-| Cross-validation within sessions 1–3 | `src/p3_classification/evaluation/evaluate_cv.py` | `results/cv_within_train/` |
+| Cross-validation within sessions 1–3 | `src/p3_classification/evaluation/evaluate_cv.py` | `results/cv_within_train/` (empty until you run it; the 5-fold CV numbers quoted in `EXPERIMENTS.md` → "Critical Bug Fix" came from an earlier ad-hoc run) |
 | Best result (ensemble) and its p-values | `src/p3_classification/evaluation/experiment_ensemble_validated.py`, `diagnostic_stats_test.py` | `EXPERIMENTS.md` → "Follow-up Experiments" |
 | Does the model look at mu/beta over C3/C4? | `src/analysis/interpretability/gradcam_spectnet.py` | `results/figures/gradcam/` |
 | Is the ERD/ERS statistically significant? | `src/analysis/interpretability/erd_characterization.py` | `results/figures/erd_characterization/` |
@@ -341,8 +348,11 @@ its own — see "Known Methodological Findings" below. High inter-subject
 variance (±12–16%) reflects genuine differences in individual EEG motor
 imagery responses (S04 > 90%, S02/S03 ~50–58%).
 
-See [`results/figures/final_comparison_all_methods.png`](results/figures/final_comparison_all_methods.png)
-for the full visual comparison including the ensemble, and
+For the full visual comparison including the ensemble, generate
+`results/figures/final_comparison_all_methods.png` with
+`uv run python src/p3_classification/evaluation/generate_final_comparison.py`
+(figures under `results/figures/` are gitignored as regenerable output, so
+they are not in the repository), and see
 [`EXPERIMENTS.md`](EXPERIMENTS.md#follow-up-experiments--statistical-validation-ensembling-improvement-attempts)
 for the detailed narrative (statistical validation, the ensemble, and the
 ShallowConvNet improvement attempts).

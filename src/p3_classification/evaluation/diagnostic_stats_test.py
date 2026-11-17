@@ -25,8 +25,8 @@ import numpy as np
 import pandas as pd
 import torch
 from scipy.stats import wilcoxon, ttest_rel
-from src.config import (SUBJECTS, DATA_PROC, RESULTS_DIR, N_CHANNELS, IMG_FREQ_BINS,
-                        IMG_TIME_BINS, DEVICE)
+from src.config import (SUBJECTS, RESULTS_DIR, N_CHANNELS, IMG_FREQ_BINS,
+                        IMG_TIME_BINS)
 from src.p3_classification.cnn.models import get_model
 from src.p3_classification.cnn.dataset import ERSPDataset
 
@@ -115,9 +115,10 @@ def main():
         vb = np.array([methods[b][s] for s in SUBJECTS])
         diff = va - vb
         try:
-            w_stat, w_p = wilcoxon(va, vb)
-        except ValueError as e:
-            w_stat, w_p = float("nan"), float("nan")
+            _, w_p = wilcoxon(va, vb)
+        except ValueError:
+            # wilcoxon raises when every paired difference is zero
+            w_p = float("nan")
         t_stat, t_p = ttest_rel(va, vb)
         sig = "**" if w_p < 0.05 else ("*" if w_p < 0.10 else "")
         print(f"  {a:28s} vs {b:28s} | mean diff={diff.mean()*100:+5.1f}pp | "

@@ -1,9 +1,9 @@
-# Dataset — no subir archivos GDF (son pesados y tienen licencia propia)
+# Dataset — do not commit GDF files (large, and under their own licence)
 data/raw/*.gdf
 data/raw/*.mat
 data/processed/
 
-# Entorno virtual Python
+# Python virtual environment
 venv/
 env/
 .env/
@@ -13,7 +13,7 @@ __pycache__/
 *.pyd
 .Python
 
-# Resultados generados (figuras y métricas se generan con el código)
+# Generated results (figures and metrics are reproducible from the code)
 results/figures/*.png
 results/figures/*.pdf
 results/figures/erd_characterization/
@@ -21,7 +21,7 @@ results/figures/gradcam/
 results/figures/c3c4_channel/
 results/metrics/*.csv
 
-# Checkpoints de modelos entrenados (pueden ser muy pesados)
+# Trained model checkpoints (can be very large)
 *.pth
 *.pt
 *.ckpt
@@ -36,7 +36,7 @@ results/metrics/*.csv
 *.swp
 *.swo
 
-# Sistema operativo
+# Operating system
 .DS_Store
 Thumbs.db
 

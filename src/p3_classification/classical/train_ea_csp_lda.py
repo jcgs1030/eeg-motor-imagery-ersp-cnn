@@ -409,7 +409,7 @@ def _plot_all_methods_comparison(df_ea: pd.DataFrame):
     fig.savefig(str(EA_FIGS / "comparison_all_methods.png"), dpi=150,
                 bbox_inches="tight")
     plt.close(fig)
-    print(f"  Comparison figure saved: comparison_all_methods.png")
+    print("  Comparison figure saved: comparison_all_methods.png")
 
 
 # ── Summary tables ────────────────────────────────────────────────────────────
@@ -451,7 +451,7 @@ def _save_tables(df: pd.DataFrame):
 
 def run(subjects: list):
     print(f"\n{'═'*58}")
-    print(f"  Euclidean Alignment + CSP baselines — BCI-IV-2b")
+    print("  Euclidean Alignment + CSP baselines — BCI-IV-2b")
     print(f"  Subjects: {subjects}")
     print(f"  Pipeline: EA → CSP ({N_CSP_COMPS} components) → LDA / SVM")
     print(f"  MI window: {MI_TMIN}–{MI_TMAX} s")
