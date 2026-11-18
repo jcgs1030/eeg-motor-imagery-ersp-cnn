@@ -131,6 +131,7 @@ not in a fresh clone. The committed exceptions are
 | Does the model look at mu/beta over C3/C4? | `src/analysis/interpretability/gradcam_spectnet.py` | `results/figures/gradcam/` |
 | Is the ERD/ERS statistically significant? | `src/analysis/interpretability/erd_characterization.py` | `results/figures/erd_characterization/` |
 | Why 32 time bins and no blur? | `src/analysis/experiments/experiment_resolution_sweep.py` | `EXPERIMENTS.md` → "ERSP Resolution / Blur Sweep" |
+| Does EEGNet's time axis matter at 32 bins? | `src/analysis/experiments/experiment_eegnet_temporal_ablation.py` | `EXPERIMENTS.md` → "EEGNet Temporal Axis vs. Capacity" |
 | What bugs were found in the ERSP and how were they confirmed? | `src/analysis/diagnostics/` | `results/baseline_bug_before_fix/`, `EXPERIMENTS.md` → "Diagnostic Finding" sections |
 
 ---
@@ -250,7 +251,10 @@ do too (64/16 kernels and 4/8 pools at 128 bins → 16/4 and 2/4 at 32). Before
 that fix EEGNet kept its 128-bin values, which left it with a **single time
 bin** before the classifier at 32 bins — see
 [`EXPERIMENTS.md`](EXPERIMENTS.md) → "EEGNet Temporal Kernel Scaling at 32
-Bins" for the retraining outcome (pooled flat, subject-specific −2.9 pp).
+Bins" for the retraining outcome (pooled flat, subject-specific −2.9 pp), and
+"EEGNet Temporal Axis vs. Capacity — Clean Ablation" for the 2×2 that
+decomposes it: the temporal axis is worth +0.8 pp at best, while −1.6 pp of
+that −2.9 pp turned out to be an unrelated train/val split change.
 
 ---
 

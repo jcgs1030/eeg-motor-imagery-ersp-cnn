@@ -126,7 +126,9 @@ def train_one_subject(model_name: str, subject: int,
                       device_str: str = DEVICE,
                       lr: float = LEARNING_RATE,
                       train_transform=None,
-                      save_outputs: bool = True) -> dict:
+                      save_outputs: bool = True,
+                      model_kwargs: dict = None,
+                      stratify: bool = True) -> dict:
     """
     Train one CNN architecture on a single subject and evaluate it.
 
@@ -138,6 +140,14 @@ def train_one_subject(model_name: str, subject: int,
     lr             : learning rate override (default: config.LEARNING_RATE)
     train_transform: optional augmentation transform (see augmentation.py),
                      applied only to the training split.
+    stratify       : whether the internal train/val split preserves the class
+                     ratio. True is the default everywhere since the external
+                     review (C-3); pass False to reproduce metrics committed
+                     before that change, which used the unstratified split.
+    model_kwargs   : extra keyword arguments forwarded to get_model(), for
+                     architecture ablations (e.g. EEGNet's kernel and pooling
+                     lengths). Defaults to none, so the production path builds
+                     exactly the same model as before this parameter existed.
     save_outputs   : if False, skip writing the checkpoint and figures to
                      the shared results/subject_specific/ paths - use this
                      for diagnostic/exploratory runs (different lr,
@@ -162,7 +172,8 @@ def train_one_subject(model_name: str, subject: int,
         batch_size=BATCH_SIZE,
         val_split=VAL_SPLIT,
         seed=RANDOM_SEED,
-        train_transform=train_transform
+        train_transform=train_transform,
+        stratify=stratify,
     )
 
     model = get_model(
@@ -170,7 +181,8 @@ def train_one_subject(model_name: str, subject: int,
         n_channels=N_CHANNELS,
         n_freq=IMG_FREQ_BINS,
         n_time=IMG_TIME_BINS,
-        n_classes=2
+        n_classes=2,
+        **(model_kwargs or {})
     ).to(device)
 
     optimizer = optim.Adam(
