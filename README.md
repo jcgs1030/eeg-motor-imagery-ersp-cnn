@@ -241,11 +241,16 @@ from anywhere.
 |---|---|---|
 | **SpectNet** | 88,050 | Ruffini et al., arXiv, 2018 |
 | **ShallowConvNet** | 36,242 | Schirrmeister et al., Hum. Brain Mapp., 2017 |
-| **EEGNet** | 6,098 | Lawhern et al., J. Neural Eng., 2018 |
+| **EEGNet** | 1,970 | Lawhern et al., J. Neural Eng., 2018 |
 
 Input: `(batch, 3, 22, 32)`, i.e. 3 channels × 22 frequency bins × 32 time
 steps. ShallowConvNet's temporal kernel and pooling lengths scale with the
-number of time bins (25/75/15 at 128 bins → 6/19/4 at 32).
+number of time bins (25/75/15 at 128 bins → 6/19/4 at 32), and EEGNet's now
+do too (64/16 kernels and 4/8 pools at 128 bins → 16/4 and 2/4 at 32). Before
+that fix EEGNet kept its 128-bin values, which left it with a **single time
+bin** before the classifier at 32 bins — see
+[`EXPERIMENTS.md`](EXPERIMENTS.md) → "EEGNet Temporal Kernel Scaling at 32
+Bins" for the retraining outcome (pooled flat, subject-specific −2.9 pp).
 
 ---
 
@@ -264,7 +269,7 @@ Full experimental narrative and per-experiment analysis in [`EXPERIMENTS.md`](EX
 
 | Model | 22 × 128 images | **22 × 32 images (current)** | Kappa (22 × 32) |
 |---|---|---|---|
-| EEGNet | 70.0% | **69.6%** | 0.393 |
+| EEGNet | 70.0% | **69.8%** | 0.396 |
 | ShallowConvNet | 60.3% | 59.3% | 0.186 |
 | SpectNet | **71.7%** | 68.0% | 0.360 |
 
@@ -288,13 +293,15 @@ full four-stage before/after table.
 
 | Model | Accuracy | F1-score | Kappa |
 |---|---|---|---|
-| EEGNet | 68.6% ± 12.2% | 66.6% ± 16.1% | 0.372 |
+| EEGNet | 65.7% ± 14.9% | 64.4% ± 16.6% | 0.314 |
 | ShallowConvNet | 54.8% ± 7.4% | 53.3% ± 8.4% | 0.096 |
 | SpectNet | 69.5% ± 12.9% | 69.1% ± 13.3% | 0.390 |
 
 Versus 22 × 128 images (paired Wilcoxon, n = 9): SpectNet −1.3 pp (p = 0.074,
-lower on 7 of 9 subjects), EEGNet −0.4 pp (p = 0.734), ShallowConvNet +0.3 pp
-(p = 1.0). None is significant, but SpectNet's drop is a consistent trend.
+lower on 7 of 9 subjects), ShallowConvNet +0.3 pp (p = 1.0). Neither is
+significant, but SpectNet's drop is a consistent trend. The EEGNet comparison
+(−0.4 pp, p = 0.734) was measured before its temporal-kernel fix; its 32-bin
+mean is now 65.7%, i.e. −3.3 pp against 128 bins.
 
 ### Experiment 3 — CSP Baselines
 
@@ -343,7 +350,7 @@ FBCSP alone is small (+1 to +2 pp) and significant in only 1 of 5 seeds
 78.7% ± 12.8%, significantly ahead of both (p=0.027 and p=0.008). **Best single method:
 FBCSP+LDA at 75.9%**, consistent with the BCI-IV-2b literature for
 3-channel classifiers and still ahead of every individual ERSP+CNN method
-(best CNN: SpectNet pooled, 71.7% with 22 × 128 images; with the current 22 × 32 images the best pooled CNN is EEGNet at 69.6%). All three ERSP fixes were worth applying
+(best CNN: SpectNet pooled, 71.7% with 22 × 128 images; with the current 22 × 32 images the best pooled CNN is EEGNet at 69.8%). All three ERSP fixes were worth applying
 for scientific correctness, but only the hop fix gave a CNN method a boost on
 its own — see "Known Methodological Findings" below. High inter-subject
 variance (±12–16%) reflects genuine differences in individual EEG motor
