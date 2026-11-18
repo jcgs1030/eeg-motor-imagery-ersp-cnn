@@ -330,9 +330,9 @@ def _save_tables(df: pd.DataFrame):
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 def run(subjects: list):
-    bands_str = ", ".join(f"{l}-{h}" for l, h in FILTER_BANK)
+    bands_str = ", ".join(f"{lo}-{hi}" for lo, hi in FILTER_BANK)
     print(f"\n{'═'*60}")
-    print(f"  FBCSP — BCI-IV-2b")
+    print("  FBCSP — BCI-IV-2b")
     print(f"  Subjects: {subjects}")
     print(f"  Filter bank ({len(FILTER_BANK)} bands): {bands_str} Hz")
     print(f"  CSP components per band: {N_CSP_COMPS}  "

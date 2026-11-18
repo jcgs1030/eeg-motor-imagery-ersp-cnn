@@ -76,7 +76,7 @@ from sklearn.metrics import (
     f1_score, cohen_kappa_score, confusion_matrix
 )
 from src.config import (
-    DATA_PROC, RESULTS_DIR, SUBJECTS, CLASS_NAMES, RANDOM_SEED
+    DATA_PROC, RESULTS_DIR, SUBJECTS, CLASS_NAMES
 )
 
 mne.set_log_level("WARNING")
@@ -119,12 +119,11 @@ def build_classifiers():
     """
     Returns dict of {name: sklearn-compatible Pipeline}.
 
-    Both pipelines share the same covariance estimation step.
+    Both pipelines start with the same covariance estimation step, each with
+    its own transformer instance so the two pipelines stay independent.
     pyriemann's Covariances transformer converts (N, C, T) epochs
     to (N, C, C) SPD covariance matrices.
     """
-    cov = Covariances(estimator=COV_ESTIMATOR)
-
     return {
         "Riem-MDM": Pipeline([
             ("cov", Covariances(estimator=COV_ESTIMATOR)),
@@ -332,7 +331,7 @@ def _plot_all_methods(df_riem: pd.DataFrame):
     fig.savefig(str(RIEM_FIGS / "comparison_all_methods.png"), dpi=150,
                 bbox_inches="tight")
     plt.close(fig)
-    print(f"  Comparison figure saved: comparison_all_methods.png")
+    print("  Comparison figure saved: comparison_all_methods.png")
 
 
 # ── Summary tables ────────────────────────────────────────────────────────────
@@ -372,9 +371,9 @@ def _save_tables(df: pd.DataFrame):
 
 def run(subjects: list):
     print(f"\n{'═'*60}")
-    print(f"  Riemannian classifiers — BCI-IV-2b")
+    print("  Riemannian classifiers — BCI-IV-2b")
     print(f"  Subjects: {subjects}")
-    print(f"  Methods: MDM (geodesic), TS+LDA (tangent space)")
+    print("  Methods: MDM (geodesic), TS+LDA (tangent space)")
     print(f"  Covariance estimator: {COV_ESTIMATOR}  |  MI window: {MI_TMIN}–{MI_TMAX} s")
     print(f"{'═'*60}\n")
 

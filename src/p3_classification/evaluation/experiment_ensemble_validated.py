@@ -62,7 +62,7 @@ from sklearn.metrics import accuracy_score, cohen_kappa_score
 from sklearn.model_selection import train_test_split
 from src.config import (
     DATA_PROC, SUBJECTS, SFREQ, N_CHANNELS, IMG_FREQ_BINS, IMG_TIME_BINS,
-    DEVICE, VAL_SPLIT, RANDOM_SEED, RESULTS_DIR,
+    VAL_SPLIT, RANDOM_SEED, RESULTS_DIR,
 )
 from src.p2_ersp.ersp import compute_ersp_image
 from src.p3_classification.cnn.models import get_model
@@ -163,7 +163,7 @@ def evaluate_on_test(subjects: list, best_w: float, per_subject_val_data: dict,
     rows = []
     for subj in subjects:
         d = per_subject_val_data[subj]
-        X_full_T, X_fbcsp_T, y_T = d["X_full"], d["X_fbcsp"], d["y"]
+        X_fbcsp_T, y_T = d["X_fbcsp"], d["y"]
 
         X_full_E, X_fbcsp_E, y_E = load_full_and_fbcsp_arrays(subj, "E")
 
