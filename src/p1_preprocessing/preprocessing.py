@@ -27,9 +27,9 @@ from src.config import (
     SUBJECTS, TRAIN_SUFFIX, EVAL_SUFFIX, TRAIN_SESSIONS, TEST_SESSIONS,
     CHANNELS, SFREQ,
     EVENT_LEFT, EVENT_RIGHT, EVENT_CUE_EVAL,
-    EVENT_LABELS, CLASS_NAMES,
+    CLASS_NAMES,
     FILT_LOW, FILT_HIGH, FILT_METHOD,
-    EPOCH_TMIN, EPOCH_TMAX, BASELINE, REJECT_THRESH,
+    EPOCH_TMIN, EPOCH_TMAX, REJECT_THRESH,
 )
 from src.p1_preprocessing.eval_labels import get_eval_labels
 
@@ -70,7 +70,7 @@ def verify_dataset() -> bool:
 
     if missing:
         print(f"\n  WARNING: {len(missing)} file(s) missing.")
-        print(f"  Download the dataset from: https://www.bbci.de/competition/iv/download/")
+        print("  Download the dataset from: https://www.bbci.de/competition/iv/download/")
         print(f"  and place the files in: {DATA_RAW}/")
         return False
     else:
@@ -564,7 +564,7 @@ def main():
 
     # ── Verification ──
     if args.verify or (args.subject is None and not args.summary):
-        ok = verify_dataset()
+        verify_dataset()
         if args.verify:
             return
 
@@ -585,7 +585,7 @@ def main():
             try:
                 subjects = [int(args.subject)]
             except ValueError:
-                print(f"  ERROR: --subject must be a number 1–9 or 'all'")
+                print("  ERROR: --subject must be a number 1–9 or 'all'")
                 return
 
         print(f"\n── Processing subject(s): {subjects} | Split(s): {suffixes} ──")

@@ -36,7 +36,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from src.config import (
-    DATA_PROC, N_CHANNELS, IMG_FREQ_BINS, SFREQ,
+    DATA_PROC, N_CHANNELS, IMG_FREQ_BINS, IMG_TIME_BINS, SFREQ,
     BATCH_SIZE, MAX_EPOCHS, PATIENCE, WEIGHT_DECAY, LEARNING_RATE,
     VAL_SPLIT, RANDOM_SEED, DEVICE,
 )
@@ -219,7 +219,9 @@ def main():
 
     baseline = next((r for r in results if r["n_time_bins"] == 128 and r["sigma"] == 0.0), None)
     if baseline is not None:
-        print(f"\n  Baseline (current production: 128 time bins, no blur): "
+        print(f"\n  Reference row (128 time bins, no blur — the resolution this "
+              f"sweep was run against; production is now "
+              f"IMG_TIME_BINS={IMG_TIME_BINS}): "
               f"acc={baseline['test_acc']:.1%}  {baseline['kb_per_trial']:.1f} KB/trial")
 
 

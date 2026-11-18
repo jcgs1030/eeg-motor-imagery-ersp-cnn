@@ -58,7 +58,6 @@ from src.config import (
     N_CHANNELS, IMG_FREQ_BINS, IMG_TIME_BINS,
     BATCH_SIZE, LEARNING_RATE, WEIGHT_DECAY, PATIENCE, DEVICE
 )
-from src.p3_classification.cnn.dataset import ERSPDataset
 from src.p3_classification.cnn.models import get_model
 
 mne.set_log_level("WARNING")
@@ -167,14 +166,18 @@ def _train_cnn_fold(model_name, X_tr, y_tr, X_val, y_val, device):
         model.train()
         for xb, yb in loader_tr:
             xb, yb = xb.to(device), yb.to(device)
-            opt.zero_grad(); crit(model(xb), yb).backward(); opt.step()
+            opt.zero_grad()
+            crit(model(xb), yb).backward()
+            opt.step()
         model.eval()
         with torch.no_grad():
             vl = sum(crit(model(xb.to(device)), yb.to(device)).item() * len(yb)
                      for xb, yb in loader_val) / len(y_val)
         sched.step(vl)
         if vl < best_val:
-            best_val = vl; best_w = {k: v.cpu().clone() for k, v in model.state_dict().items()}; patience_cnt = 0
+            best_val = vl
+            best_w = {k: v.cpu().clone() for k, v in model.state_dict().items()}
+            patience_cnt = 0
         else:
             patience_cnt += 1
         if patience_cnt >= PATIENCE:
@@ -191,7 +194,8 @@ def _train_cnn_fold(model_name, X_tr, y_tr, X_val, y_val, device):
 def cv_cnn(X, y, subject):
     skf    = StratifiedKFold(n_splits=N_SPLITS, shuffle=True, random_state=RANDOM_SEED)
     device = torch.device(DEVICE)
-    torch.manual_seed(RANDOM_SEED); np.random.seed(RANDOM_SEED)
+    torch.manual_seed(RANDOM_SEED)
+    np.random.seed(RANDOM_SEED)
     results = {m: [] for m in ["EEGNet", "ShallowConvNet", "SpectNet"]}
     model_map = {"EEGNet": "eegnet", "ShallowConvNet": "shallowconvnet", "SpectNet": "spectnet"}
 
@@ -258,12 +262,14 @@ def _plot_cv(df: pd.DataFrame):
         ax.bar_label(bars, fmt="%.0f%%", padding=2, fontsize=6)
 
     ax.axhline(50, color="gray", linewidth=0.8, linestyle="--")
-    ax.set_xticks(x); ax.set_xticklabels([f"S{s:02d}" for s in subjects])
+    ax.set_xticks(x)
+    ax.set_xticklabels([f"S{s:02d}" for s in subjects])
     ax.set_ylabel("Accuracy (%) — 5-fold CV mean ± std")
     ax.set_ylim([0, 120])
     ax.set_title("Within-train 5-fold CV — BCI-IV-2b (sessions 1-3 only)", fontsize=12)
     ax.legend(fontsize=7, ncol=4)
-    ax.spines["top"].set_visible(False); ax.spines["right"].set_visible(False)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
     plt.tight_layout()
     fig.savefig(str(CV_FIGS / "cv_accuracy.png"), dpi=150, bbox_inches="tight")
     plt.close(fig)
@@ -274,7 +280,8 @@ def _plot_cv(df: pd.DataFrame):
     bp   = ax.boxplot(data, patch_artist=True,
                       medianprops={"color": "black", "linewidth": 2})
     for patch, clf in zip(bp["boxes"], classifiers):
-        patch.set_facecolor(palette.get(clf, "steelblue")); patch.set_alpha(0.75)
+        patch.set_facecolor(palette.get(clf, "steelblue"))
+        patch.set_alpha(0.75)
     for j, (vals, clf) in enumerate(zip(data, classifiers)):
         jitter = np.random.default_rng(0).uniform(-0.1, 0.1, size=len(vals))
         ax.scatter(np.full(len(vals), j + 1) + jitter, vals,
@@ -284,7 +291,8 @@ def _plot_cv(df: pd.DataFrame):
     ax.set_xticklabels(classifiers, rotation=12, ha="right", fontsize=8)
     ax.set_ylabel("5-fold CV accuracy (%)")
     ax.set_title("Distribution across subjects — within-train CV", fontsize=11)
-    ax.spines["top"].set_visible(False); ax.spines["right"].set_visible(False)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
     plt.tight_layout()
     fig.savefig(str(CV_FIGS / "cv_boxplot.png"), dpi=150, bbox_inches="tight")
     plt.close(fig)
@@ -306,7 +314,7 @@ def _save_tables(df: pd.DataFrame):
         })
     df_sum = pd.DataFrame(rows)
     df_sum.to_csv(str(CV_METRICS / "summary_cv.csv"), index=False)
-    print(f"\n  Saved: per_subject_cv.csv, summary_cv.csv")
+    print("\n  Saved: per_subject_cv.csv, summary_cv.csv")
     print("\n  ══ Within-train 5-fold CV summary (mean ± std across 9 subjects) ══")
     print(df_sum.to_string(index=False))
 
@@ -315,7 +323,7 @@ def _save_tables(df: pd.DataFrame):
 
 def run(subjects: list):
     print(f"\n{'═'*60}")
-    print(f"  Within-train 5-fold CV — BCI-IV-2b")
+    print("  Within-train 5-fold CV — BCI-IV-2b")
     print(f"  Subjects: {subjects} | Splits: {N_SPLITS}")
     print(f"{'═'*60}\n")
 

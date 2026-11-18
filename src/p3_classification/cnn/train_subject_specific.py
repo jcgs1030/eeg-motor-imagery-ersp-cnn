@@ -435,7 +435,7 @@ def _save_summary_tables(df: pd.DataFrame):
 def run(model_names: list, subjects: list, device_str: str):
     total = len(model_names) * len(subjects)
     print(f"\n{'═'*54}")
-    print(f"  Subject-specific training")
+    print("  Subject-specific training")
     print(f"  Models:   {[m.upper() for m in model_names]}")
     print(f"  Subjects: {subjects}")
     print(f"  Total runs: {total}")

@@ -114,7 +114,7 @@ def main():
     if args.subject:
         plot_classic_erd_curve([args.subject], f"S{args.subject:02d}")
     else:
-        plot_classic_erd_curve(SUBJECTS, "Grand-average, 9 sujetos")
+        plot_classic_erd_curve(SUBJECTS, "Grand-average, 9 subjects")
 
 
 if __name__ == "__main__":

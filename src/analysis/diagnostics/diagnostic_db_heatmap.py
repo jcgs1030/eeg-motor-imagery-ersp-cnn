@@ -66,7 +66,7 @@ def main():
                 counts[cls] += int(mask.sum())
 
     fig, axes = plt.subplots(N_CHANNELS, 2, figsize=(10, 4 * N_CHANNELS))
-    title_scope = f"Sujeto S{args.subject:02d}" if args.subject is not None else "Grand-average — 9 sujetos pooled"
+    title_scope = f"Subject S{args.subject:02d}" if args.subject is not None else "Grand-average — 9 subjects pooled"
     fig.suptitle(
         f"ERSP en dB reales — {title_scope} — colormap '{args.cmap}'",
         fontsize=11, fontweight="bold"
