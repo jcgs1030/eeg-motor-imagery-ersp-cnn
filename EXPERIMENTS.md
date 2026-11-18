@@ -843,7 +843,7 @@ classifier head from the flattened conv output:
 
 | Architecture | Parameters at 22×32 (current) | Parameters at 22×128 | Reference |
 |---|---|---|---|
-| EEGNet | 6,098 | 6,194 | Lawhern et al., J. Neural Eng., 2018 |
+| EEGNet | 1,970 (6,098 before the temporal-kernel fix) | 6,194 | Lawhern et al., J. Neural Eng., 2018 |
 | ShallowConvNet | 36,242 | 38,442 | Schirrmeister et al., Hum. Brain Mapp., 2017 |
 | SpectNet | 88,050 | 604,146 | Ruffini et al., arXiv, 2018 |
 
@@ -858,11 +858,12 @@ those models were not retrained after the switch to 32 time bins.
 
 | Model | Subjects | Accuracy | Precision | Recall | F1-score | Kappa | Parameters |
 |---|---|---|---|---|---|---|---|
-| **EEGNet** | **all (9)** | **69.6%** | 69.6% | 69.6% | 69.6% | **0.393** | 6,098 |
+| **EEGNet** | **all (9)** | **69.8%** | 69.8% | 69.8% | 69.8% | **0.396** | 1,970 |
 | ShallowConvNet | all (9) | 59.3% | 59.3% | 59.3% | 59.2% | 0.186 | 36,242 |
 | SpectNet | all (9) | 68.0% | 68.0% | 68.0% | 68.0% | 0.360 | 88,050 |
 
-EEGNet (−0.4pp) and ShallowConvNet (−1.0pp) are essentially unchanged.
+EEGNet (now 69.8%, after the temporal-kernel fix below) and ShallowConvNet
+(−1.0pp) are essentially unchanged.
 SpectNet pooled drops 3.7pp (71.7% -> 68.0%), more than its subject-specific
 drop (−1.3pp, see Experiment 2), and is no longer the best pooled CNN. A
 single pooled run has no per-subject pairing here, so this is not tested for
@@ -957,7 +958,7 @@ This is the standard intra-subject protocol in the BCI literature.
 
 | Model | Accuracy | F1-score | Kappa | Parameters |
 |---|---|---|---|---|
-| EEGNet | 68.6% ± 12.2% | 66.6% ± 16.1% | 0.372 ± 0.243 | 6,098 |
+| EEGNet | 65.7% ± 14.9% | 64.4% ± 16.6% | 0.314 ± 0.299 | 1,970 |
 | ShallowConvNet | **54.8% ± 7.4%** | 53.3% ± 8.4% | **0.096 ± 0.148** | 36,242 |
 | SpectNet | 69.5% ± 12.9% | 69.1% ± 13.3% | 0.390 ± 0.259 | 88,050 |
 
@@ -969,8 +970,16 @@ Paired comparison vs. 128 bins (Wilcoxon, n=9):
 | Model | Δ accuracy (mean) | p | Subjects lower at 32 bins |
 |---|---|---|---|
 | SpectNet | −1.3pp | 0.074 | 7/9 |
-| EEGNet | −0.4pp | 0.734 | 4/9 |
+| EEGNet (pre-fix arch) | −0.4pp | 0.734 | 4/9 |
 | ShallowConvNet | +0.3pp | 1.000 | 5/9 |
+
+> The EEGNet row compares the 128-bin model against the 32-bin model **as it
+> was then** — with the 128-bin kernels left in place, i.e. a single time bin
+> before the classifier. After the temporal-kernel fix the 32-bin
+> subject-specific mean is 65.7%, so against 69.0% at 128 bins the gap is
+> −3.3pp rather than −0.4pp. It was not re-tested pairwise because the 128-bin
+> per-subject values are not retained in the repository. See "EEGNet Temporal
+> Kernel Scaling at 32 Bins".
 
 No difference is significant, but SpectNet's drop is consistent across
 subjects (−0.3 to −3.8pp on 7/9) - a trend, not "no effect" - in exchange
@@ -1505,6 +1514,94 @@ in "Experiment 2" above.
 
 ---
 
+## EEGNet Temporal Kernel Scaling at 32 Bins (`src/p3_classification/cnn/models/eegnet.py`)
+
+> **Status: APPLIED and retrained.** This closes M-7 from the external review
+> (see "External Review — Code Hygiene Pass"), the finding flagged there as
+> the highest-priority remaining fix.
+
+### Root cause
+
+EEGNet's temporal kernel and pooling lengths (64 and 16 samples; pools 4 then
+8) were tuned for 128 time bins and were never rescaled when `IMG_TIME_BINS`
+dropped to 32. Two consequences, both measured:
+
+- The first convolution's kernel (64) was **twice the entire input length**
+  (32).
+- The time axis **collapsed to a single bin** before the classifier: `pool2`
+  output `(16, 1, 1)` instead of `(16, 1, 4)` at 128 bins. The model could not
+  represent temporal structure at all — every reported EEGNet 22x32 number was
+  produced by a model whose classifier saw one time-averaged value per
+  feature map.
+
+`ShallowConvNet` already scaled its kernels with `n_time`; EEGNet was left out
+of that change.
+
+### Fix applied
+
+Kernel and pool lengths now scale with `n_time`, with the pools chosen to
+leave 4 time bins before the classifier, split as evenly as possible in powers
+of two. At `n_time=128` this reproduces the original values exactly, so the
+22x128 results above are untouched:
+
+| `n_time` | conv1 / separable kernel | pool1 / pool2 | Time bins before classifier | Parameters |
+|---|---|---|---|---|
+| 128 | 64 / 16 | 4 / 8 | 4 | 6,194 (unchanged) |
+| 64 | 32 / 8 | 4 / 4 | 4 | 3,378 |
+| **32 (production)** | **16 / 4** | **2 / 4** | **4** (was **1**) | **1,970** (was 6,098) |
+
+### Retraining outcome — the defect was real, the fix does not help
+
+Both EEGNet runs were retrained at 32 bins. SpectNet and ShallowConvNet are
+untouched (their architectures did not change).
+
+| | Fixed 128-bin kernels (1 time bin) | Scaled kernels (4 time bins) |
+|---|---|---|
+| EEGNet, pooled (9 subj) | 69.6%, kappa 0.393 | **69.8%, kappa 0.396** |
+| EEGNet, subject-specific | 68.6% ± 12.2%, kappa 0.372 | **65.7% ± 14.9%, kappa 0.314** |
+
+Per subject (subject-specific), paired Wilcoxon n=9:
+
+| Subject | Before | After | Δ |
+|---|---|---|---|
+| S01 | 62.5% | 48.4% | **−14.1** |
+| S02 | 50.0% | 47.9% | −2.1 |
+| S03 | 54.4% | 48.4% | −6.0 |
+| S04 | 88.4% | 90.3% | +1.9 |
+| S05 | 74.4% | 70.9% | −3.5 |
+| S06 | 69.9% | 67.1% | −2.8 |
+| S07 | 64.4% | 68.4% | +4.0 |
+| S08 | 80.0% | 80.3% | +0.3 |
+| S09 | 73.4% | 69.7% | −3.7 |
+| **mean** | **68.6%** | **65.7%** | **−2.9, p=0.164, lower on 6/9** |
+
+The pooled model is flat (+0.2pp). The subject-specific mean drops 2.9pp,
+which is **not significant** (p=0.164) but is consistent (lower on 6 of 9),
+and cross-subject variance grows (±12.2% → ±14.9%), driven by S01 falling
+14pp to near chance.
+
+**Confound, stated rather than resolved:** this change moved two things at
+once. The time axis before the classifier went from 1 bin to 4, *and* the
+parameter count fell from 6,098 to 1,970 (3x smaller), because the kernels
+themselves shrank. So the subject-specific drop cannot be attributed to the
+temporal axis alone — reduced capacity on ~340 training trials per subject is
+an equally good explanation, and the later best epochs under the new
+architecture (median 18 vs 9) are consistent with a smaller model that trains
+further before overfitting. A clean ablation would hold the parameter count
+roughly constant (for example by raising `F1`) while varying only the pooling.
+That was not run.
+
+**Conclusion.** This is the third time in this project that a defensible
+correctness fix failed to improve, or actively cost, classification accuracy
+— after the epsilon fix (Second Diagnostic Finding) and the 32-bin resolution
+cut. A model whose classifier sees a single time bin cannot be defended in the
+thesis regardless of its score, so the fix stays; but it should be reported
+with its cost, not as an improvement. The honest summary is that EEGNet's
+22x32 accuracy was never dependent on the temporal axis it was supposed to
+have.
+
+---
+
 ## Key Findings
 
 1. **Evaluation labels were broken (critical bug):** The GDF evaluation files contain
@@ -1737,7 +1834,7 @@ fixing it would mean extending `EPOCH_TMAX` past 4.0 s and reprocessing.
 | M-1 analysis window includes cue VEPs | Valid; needs an `ANALYSIS_TMIN=0.5` sensitivity run. |
 | M-3 fixed ±6 dB clip | Valid and **understated**: 32.5% of all pixels are saturated (24.7% at the -6 dB ERD floor, 7.8% at the +6 dB ceiling), uniformly across all 9 subjects (30.1–35.1%) — not a strong-subject problem. Needs a wider-clip rerun. |
 | M-5 parameter/sample ratio | Headline figure wrong (88,050 params at 32 bins, not 540,000 — that is the 128-bin model at 604,146), but the concern stands. |
-| M-7 EEGNet kernel 64 > n_time 32 | Valid and **understated**: the time axis collapses to a **single bin** before the classifier (`pool2` output `(16, 1, 1)` vs `(16, 1, 4)` at 128 bins), so the model cannot represent temporal structure at all. `ShallowConvNet` already scales its kernels with `n_time`; EEGNet was left out. Highest-priority fix, requires retraining. |
+| M-7 EEGNet kernel 64 > n_time 32 | **Implemented** — see "EEGNet Temporal Kernel Scaling at 32 Bins". Valid and **understated**: the time axis collapses to a **single bin** before the classifier (`pool2` output `(16, 1, 1)` vs `(16, 1, 4)` at 128 bins), so the model cannot represent temporal structure at all. `ShallowConvNet` already scales its kernels with `n_time`; EEGNet was left out. Retrained: pooled flat (+0.2pp), subject-specific −2.9pp (p=0.164). |
 | L-1 CUDA seeds not fixed | Valid but near-moot: `DEVICE = "cpu"`. |
 
 ---

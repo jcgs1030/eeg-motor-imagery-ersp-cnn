@@ -68,6 +68,10 @@ from src.p3_classification.cnn.models import get_model
 
 # ── Output directories ────────────────────────────────────────────────────────
 SS_DIR      = RESULTS_DIR / "subject_specific"
+
+# Models trained by this process, set in run(); used so a partial run keeps
+# the committed rows of the models it did not touch.
+_models_trained_this_run: list = []
 SS_FIGS     = SS_DIR / "figures"
 SS_METRICS  = SS_DIR / "metrics"
 
@@ -391,6 +395,47 @@ def _plot_summary(df: pd.DataFrame):
     plt.close(fig)
 
 
+def _load_existing_per_subject() -> pd.DataFrame:
+    """Read the committed per-subject table back into the numeric form the
+    plotting and summary code uses, or an empty frame if it is absent.
+
+    Needed because a partial run (e.g. `--model eegnet`) must not erase the
+    rows of the models it did not train: `to_csv` truncates. This is the same
+    class of accident EXPERIMENTS.md records under "A note on code safety
+    found while running these experiments", where experiment scripts silently
+    overwrote the committed ShallowConvNet results.
+    """
+    csv = SS_METRICS / "per_subject_results.csv"
+    if not csv.exists():
+        return pd.DataFrame()
+    raw = pd.read_csv(str(csv))
+    out = pd.DataFrame({
+        "model":   raw["Model"].astype(str),
+        "subject": raw["Subject"].astype(int),
+    })
+    for src_col, dst in [("Accuracy", "accuracy"), ("Precision", "precision"),
+                         ("Recall", "recall"), ("F1-score", "f1")]:
+        out[dst] = raw[src_col].astype(str).str.rstrip("%").astype(float) / 100.0
+    out["kappa"]      = raw["Kappa"].astype(float)
+    out["best_epoch"] = raw["Best Epoch"].astype(int)
+    out["n_params"]   = raw["Parameters"].astype(str).str.replace(",", "", regex=False).astype(int)
+    return out
+
+
+def _merge_with_committed(df: pd.DataFrame) -> pd.DataFrame:
+    """Rows just trained win; rows for every other model are kept as committed."""
+    existing = _load_existing_per_subject()
+    if existing.empty:
+        return df.copy()
+    trained = set(df["model"].unique())
+    kept = existing[~existing["model"].isin(trained)]
+    if not kept.empty:
+        print(f"  Keeping committed rows for: "
+              f"{sorted(kept['model'].unique())} (not retrained in this run)")
+    merged = pd.concat([kept, df], ignore_index=True)
+    return merged.sort_values(["model", "subject"]).reset_index(drop=True)
+
+
 def _save_summary_tables(df: pd.DataFrame):
     """Save per-subject CSV and aggregated summary by model."""
     # Per-subject table
@@ -422,7 +467,21 @@ def _save_summary_tables(df: pd.DataFrame):
             "Parameters": f"{int(grp['n_params'].iloc[0]):,}",
         })
     df_sum = pd.DataFrame(rows)
+
+    # For a model not retrained in this run, carry its committed summary row
+    # over verbatim rather than recomputing it: the per-subject CSV stores
+    # kappa to 3 decimals, so recomputing a std from it drifts in the last
+    # digit (SpectNet: 0.259 -> 0.258). Only rows this run actually produced
+    # are rewritten.
     csv2 = SS_METRICS / "summary_by_model.csv"
+    trained_upper = {m.upper() for m in _models_trained_this_run}
+    if csv2.exists() and trained_upper:
+        prev = pd.read_csv(str(csv2))
+        kept = prev[~prev["Model"].astype(str).str.upper().isin(trained_upper)]
+        if not kept.empty:
+            df_sum = (pd.concat([df_sum[df_sum["Model"].str.upper().isin(trained_upper)], kept],
+                                ignore_index=True)
+                      .sort_values("Model").reset_index(drop=True))
     df_sum.to_csv(str(csv2), index=False)
     print(f"  Saved: {csv2.name}")
 
@@ -433,6 +492,8 @@ def _save_summary_tables(df: pd.DataFrame):
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 def run(model_names: list, subjects: list, device_str: str):
+    global _models_trained_this_run
+    _models_trained_this_run = list(model_names)
     total = len(model_names) * len(subjects)
     print(f"\n{'═'*54}")
     print("  Subject-specific training")
@@ -455,7 +516,7 @@ def run(model_names: list, subjects: list, device_str: str):
     total_time = time.time() - t_global
     print(f"\n  All runs completed in {total_time/60:.1f} min")
 
-    df = pd.DataFrame(all_results)
+    df = _merge_with_committed(pd.DataFrame(all_results))
     _save_summary_tables(df)
     _plot_summary(df)
     print(f"\n  Figures saved to: {SS_FIGS}")
