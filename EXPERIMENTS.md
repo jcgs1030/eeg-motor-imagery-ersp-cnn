@@ -1560,6 +1560,13 @@ untouched (their architectures did not change).
 | EEGNet, pooled (9 subj) | 69.6%, kappa 0.393 | **69.8%, kappa 0.396** |
 | EEGNet, subject-specific | 68.6% ± 12.2%, kappa 0.372 | **65.7% ± 14.9%, kappa 0.314** |
 
+> The left column is the committed pre-fix row, which was trained on the
+> **unstratified** train/val split; the right column uses the stratified
+> split that is now the default. Both the pooled and the subject-specific
+> comparison therefore mix a protocol change in with the architecture change.
+> The subject-specific side is decomposed in the next section; the pooled side
+> (a single run, no pairing) was not.
+
 Per subject (subject-specific), paired Wilcoxon n=9:
 
 | Subject | Before | After | Δ |
@@ -1580,16 +1587,23 @@ which is **not significant** (p=0.164) but is consistent (lower on 6 of 9),
 and cross-subject variance grows (±12.2% → ±14.9%), driven by S01 falling
 14pp to near chance.
 
-**Confound, stated rather than resolved:** this change moved two things at
-once. The time axis before the classifier went from 1 bin to 4, *and* the
-parameter count fell from 6,098 to 1,970 (3x smaller), because the kernels
-themselves shrank. So the subject-specific drop cannot be attributed to the
-temporal axis alone — reduced capacity on ~340 training trials per subject is
-an equally good explanation, and the later best epochs under the new
-architecture (median 18 vs 9) are consistent with a smaller model that trains
-further before overfitting. A clean ablation would hold the parameter count
-roughly constant (for example by raising `F1`) while varying only the pooling.
-That was not run.
+**Confound — since resolved; see the ablation in the next section.** This
+change moved more than one thing at once:
+
+1. the time axis before the classifier went from 1 bin to 4;
+2. the parameter count fell from 6,098 to 1,970 (3x), because the kernels
+   themselves shrank;
+3. **and the "before" column above is not even the same training protocol.**
+   It is the committed pre-fix row, trained with the *unstratified* train/val
+   split; stratification became the default in the external-review pass (C-3)
+   between that row being committed and this retraining. So the comparison
+   silently changed the split as well as the architecture.
+
+The next section decomposes all three with a 2x2 plus a split control. Result,
+in short: **the temporal axis is worth +0.8pp at best and is not even
+consistent in sign; the −2.9pp above is −1.6pp of split change plus a capacity
+loss.** The −2.9pp figure itself is reproduced exactly by the ablation, so the
+number was right — its attribution to "the temporal-kernel fix" was not.
 
 **Conclusion.** This is the third time in this project that a defensible
 correctness fix failed to improve, or actively cost, classification accuracy
@@ -1599,6 +1613,109 @@ thesis regardless of its score, so the fix stays; but it should be reported
 with its cost, not as an improvement. The honest summary is that EEGNet's
 22x32 accuracy was never dependent on the temporal axis it was supposed to
 have.
+
+---
+
+## EEGNet Temporal Axis vs. Capacity — Clean Ablation (`src/analysis/experiments/experiment_eegnet_temporal_ablation.py`)
+
+> **Status: run, explanatory only.** Nothing here changes the production
+> configuration, any checkpoint or any committed result file (every run uses
+> `save_outputs=False`). It writes one file of its own,
+> `results/metrics/eegnet_temporal_ablation.csv`.
+
+### Why this was separable
+
+The previous section's −2.9pp was confounded three ways. The confound can be
+unpicked because EEGNet's parameter count is dominated by its two kernel
+lengths and is almost independent of its pooling:
+
+```
+conv1     : n_channels * F1 * filter_time_length   =  24 * k1
+sep_conv   : (F1*D) * F2 * sep_filter_length        = 256 * k2
+fc         : 16 * final_time_bins * n_classes + 2
+```
+
+Changing only the pooling moves `final_time_bins` from 1 to 4 and adds a mere
+**96 parameters** to `fc`. So the temporal axis can be varied at essentially
+constant capacity, and capacity at constant temporal axis — a 2x2 — plus one
+control for the split:
+
+| | kernels 64/16 | kernels 16/4 |
+|---|---|---|
+| pools 4/8 → **1** time bin | **(1)** 6,098 params | **(3)** 1,874 params |
+| pools 2/4 → **4** time bins | **(2)** 6,194 params | **(4)** 1,970 params |
+
+(1) is the pre-fix architecture, (4) the shipped fix. **(5)** is (1) again on
+the *unstratified* split — i.e. exactly the protocol the committed pre-fix row
+was trained with.
+
+Protocol otherwise identical to Experiment 2: subject-specific, sessions 1-3
+train / 4-5 test, `RANDOM_SEED`, same early stopping. Only the
+subject-specific setting was run — it is where the drop appeared, and the only
+one of the two that yields a 9-value vector for a paired test.
+
+### Results (mean ± std across 9 subjects)
+
+| Condition | kernels | pools | Time bins | Parameters | Accuracy | Kappa |
+|---|---|---|---|---|---|---|
+| **(5)** pre-fix, **unstratified** split *(= the committed row)* | 64/16 | 4/8 | 1 | 6,098 | **68.6% ± 12.2%** | 0.372 |
+| **(2)** 4 bins, big kernels | 64/16 | 2/4 | **4** | 6,194 | **67.8% ± 13.4%** | 0.355 |
+| **(1)** pre-fix, stratified split | 64/16 | 4/8 | 1 | 6,098 | 67.0% ± 12.8% | 0.339 |
+| **(3)** 1 bin, small kernels | 16/4 | 4/8 | 1 | 1,874 | 66.6% ± 13.3% | 0.331 |
+| **(4)** shipped fix | 16/4 | 2/4 | **4** | 1,970 | 65.7% ± 14.9% | 0.314 |
+
+**Validation of the setup:** condition (5) reproduces the committed pre-fix
+row exactly — 68.6% ± 12.2%, kappa 0.372 — and the (5)→(4) contrast reproduces
+the −2.9pp (p=0.164) reported in the previous section. The decomposition below
+is therefore of the same quantity, not of a re-run that happened to differ.
+
+### Paired contrasts (Wilcoxon, n=9)
+
+| What it isolates | Contrast | Δ | p | Higher on |
+|---|---|---|---|---|
+| **Temporal axis**, ~constant capacity (+96 params) | (1)→(2) | **+0.8pp** | 0.641 | 4/9 |
+| **Temporal axis**, at low capacity | (3)→(4) | **−0.8pp** | 0.348 | 3/9 |
+| **Capacity**, at a constant 1 time bin | (1)→(3) | −0.4pp | 0.656 | 3/9 |
+| **Capacity**, at a constant 4 time bins | (2)→(4) | **−2.0pp** | 0.141 | 2/9 |
+| **Stratified-split change alone** | (5)→(1) | **−1.6pp** | 0.195 | 2/9 |
+| All three factors together | (5)→(4) | −2.9pp | 0.164 | 3/9 |
+
+### Conclusions
+
+**The temporal axis does not matter for accuracy here.** Going from 1 real
+time bin to 4 is worth +0.8pp at high capacity and **−0.8pp** at low capacity:
+the sign is not even consistent, and neither contrast is remotely significant.
+EEGNet's classifier was not making use of the time axis it was missing. The
+defect was a defect of *interpretability and defensibility*, not of
+performance — which is the honest way to present it.
+
+**The −2.9pp decomposes into two things, neither of which is the temporal
+axis:** −1.6pp from the stratified-split change (a protocol difference with no
+architectural content at all, and more than half the total), and the rest from
+**capacity** — shrinking the kernels costs −2.0pp at 4 time bins, the largest
+single effect in the table.
+
+**A better-scoring configuration exists, and is deliberately not adopted.**
+Condition (2) gets the 4 real time bins *and* keeps the parameters (6,194),
+scoring 67.8% — 2.1pp above the shipped (4) and 0.8pp above the pre-fix (1).
+It is not promoted to production for two reasons:
+
+1. It keeps a 64-sample kernel over a 32-bin input. With padding 32 that is
+   valid, but it means every output position sees the entire input, i.e. an
+   almost-global temporal filter. Defensible, awkward to justify.
+2. **Choosing among these five conditions by their sessions 4-5 score would be
+   tuning on the test set** — the same leakage this log already documents for
+   the ensemble weight (C-2) and for the choice of 32 time bins (C-1). A
+   configuration change would have to be selected on a validation split carved
+   out of sessions 1-3, as `experiment_ensemble_validated.py` does.
+
+So this ablation is reported as an explanation of the previous section, not as
+a basis for changing the model.
+
+**Still untested:** the cleanest variant of all — keep pools 2/4 (4 real time
+bins) and recover capacity by raising `F1` rather than by lengthening the
+kernels. That would give 4 time bins with correctly-sized kernels, avoiding
+objection 1 above. It still faces objection 2.
 
 ---
 
@@ -1696,7 +1813,18 @@ have.
     promising direction, not a fix on its own. The architecture's
     square→log nonlinearity remains the leading unconfirmed hypothesis.
 
-13. **Experiment 4 (Euclidean Alignment) carries no information:** EA placed
+13. **EEGNet's collapsed time axis was a real defect with no measurable cost.**
+    At 32 bins its 128-bin kernels left a single time bin before the
+    classifier. Fixing it changed subject-specific accuracy by −2.9pp, but a
+    2x2 ablation plus a split control shows the temporal axis itself is worth
+    +0.8pp at best (and −0.8pp at low capacity, p≥0.35 either way): −1.6pp of
+    that −2.9pp was an unrelated train/val split change, and the rest was lost
+    capacity from the shorter kernels. A configuration with 4 real time bins
+    *and* the original parameter count scores 67.8%, better than both, but
+    adopting it on that basis would be selection on the test set. See "EEGNet
+    Temporal Axis vs. Capacity — Clean Ablation".
+
+14. **Experiment 4 (Euclidean Alignment) carries no information:** EA placed
     before MNE's `CSP` is algebraically a no-op, because `CSP` whitens
     internally and is therefore invariant to it. The CSP features are
     identical to float64 epsilon and the predictions identical on 9/9
@@ -1708,7 +1836,7 @@ have.
     log-variance + LDA, or the Riemannian branch). See
     `src/analysis/diagnostics/diagnostic_ea_invariance.py`.
 
-14. **ERSP images were cut from 22x128 to 22x32 with no significant loss**
+15. **ERSP images were cut from 22x128 to 22x32 with no significant loss**
     (pooled sweep: 69.4% vs. 70.0%; subject-specific SpectNet 69.5% vs.
     70.8%, p=0.074, n=9), 4x smaller per trial and ~7x fewer SpectNet
     parameters. A time-only anti-aliasing blur does not help. The 32-bin
