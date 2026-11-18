@@ -1383,16 +1383,24 @@ change classification accuracy or saliency? Exploratory - trains a SEPARATE
 4-channel SpectNet pooled model (`results/spectnet_c3c4_all.pth`), does not
 touch the production 3-channel checkpoint or pipeline.
 
-| | Mean accuracy |
-|---|---|
-| SpectNet pooled, 3-channel (C3, Cz, C4) | 71.5% ± 10.2% |
-| SpectNet pooled, 4-channel (C3, Cz, C4, C3−C4) | 72.2% ± 10.6% |
-| Difference | +0.7pp |
+Rerun at the production 22x32 resolution (the first run below was at 22x128,
+kept for the record):
+
+| | Mean accuracy, 22x32 (current) | Mean accuracy, 22x128 |
+|---|---|---|
+| SpectNet pooled, 3-channel (C3, Cz, C4) | 67.8% ± 10.2% | 71.5% ± 10.2% |
+| SpectNet pooled, 4-channel (C3, Cz, C4, C3−C4) | **69.7% ± 11.6%** | 72.2% ± 10.6% |
+| Difference | **+1.9pp** | +0.7pp |
 
 `results/figures/c3c4_channel/saliency_4ch_left.png`,
 `saliency_4ch_right.png`
 
-A small, directionally positive accuracy change - not a breakthrough. The
+A small, directionally positive accuracy change - not a breakthrough, and
+not tested for significance (a single pooled run per configuration gives no
+per-subject pairing). The gap is larger at 32 bins (+1.9pp) than it was at
+128 (+0.7pp), which is suggestive but rests on two single runs; it is not
+evidence that the difference channel matters more at lower time resolution.
+The
 per-channel saliency (same corrected, globally-normalised method as above)
 shows the new C3−C4 channel picks up a moderate signal in the same mu-band
 region, but **does not displace C4 as the most salient channel** - C4
