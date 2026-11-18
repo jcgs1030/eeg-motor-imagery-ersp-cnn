@@ -40,7 +40,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from src.config import (
-    SUBJECTS, N_CHANNELS, IMG_FREQ_BINS, IMG_TIME_BINS,
+    SUBJECTS, N_CHANNELS, IMG_FREQ_BINS, IMG_TIME_BINS, RESULTS_DIR,
     BATCH_SIZE, WEIGHT_DECAY, RANDOM_SEED, DEVICE
 )
 from src.p3_classification.cnn.dataset import build_loaders, ERSPDataset
@@ -94,7 +94,7 @@ def _predict_all(model, dataset, device):
 
 
 def _load_pooled_model(device):
-    ckpt = torch.load("results/spectnet_all.pth", map_location="cpu", weights_only=False)
+    ckpt = torch.load(str(RESULTS_DIR / "spectnet_all.pth"), map_location="cpu", weights_only=False)
     model = get_model("spectnet", n_channels=N_CHANNELS, n_freq=IMG_FREQ_BINS,
                       n_time=IMG_TIME_BINS, n_classes=2)
     model.load_state_dict(ckpt["state_dict"])

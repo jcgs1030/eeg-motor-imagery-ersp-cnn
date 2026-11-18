@@ -57,7 +57,9 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from sklearn.metrics import cohen_kappa_score
-from src.config import DATA_PROC, SFREQ, CHANNELS, N_CHANNELS, RANDOM_SEED, DEVICE
+from sklearn.model_selection import train_test_split
+from src.config import (DATA_PROC, SFREQ, CHANNELS, N_CHANNELS, RANDOM_SEED, DEVICE,
+                        RESULTS_DIR)
 from src.p2_ersp.ersp import compute_ersp_image
 from src.p3_classification.cnn.models import get_model
 from src.p3_classification.classical.train_fbcsp import EVENT_LABEL_MAP
@@ -141,10 +143,14 @@ def train_ast(X_train_full, y_train_full, unfreeze: int, max_epochs: int,
     torch.manual_seed(RANDOM_SEED)
     np.random.seed(RANDOM_SEED)
 
-    n = len(y_train_full)
-    idx = np.random.RandomState(RANDOM_SEED).permutation(n)
-    n_val = max(1, int(n * 0.15))
-    val_idx, train_idx = idx[:n_val], idx[n_val:]
+    # Stratified by class (external review, C-4). Images come from the
+    # chronologically-ordered epoch .fif files, so the classes are already
+    # interleaved across pooled subjects; stratifying guarantees the val split
+    # keeps the class balance instead of relying on the seed.
+    train_idx, val_idx = train_test_split(
+        np.arange(len(y_train_full)), test_size=0.15,
+        stratify=y_train_full, random_state=RANDOM_SEED,
+    )
 
     train_ds = torch.utils.data.TensorDataset(
         torch.from_numpy(X_train_full[train_idx]), torch.from_numpy(y_train_full[train_idx]).long())
@@ -248,7 +254,7 @@ def main():
     print("\n== Step 4: comparing against SpectNet pooled and FBCSP+LDA (same subjects) ==")
     spectnet_acc = per_subject_acc_pooled("spectnet")
     fbcsp_acc = load_per_subject_csv(
-        "results/fbcsp/metrics/per_subject_results.csv", model_filter="FBCSP+LDA",
+        str(RESULTS_DIR / "fbcsp" / "metrics" / "per_subject_results.csv"), model_filter="FBCSP+LDA",
         model_col="Classifier")
 
     print(f"\n  {'Subject':>8} {'AST':>8} {'SpectNet':>10} {'FBCSP+LDA':>10}")

@@ -30,7 +30,6 @@ from src.config import (
     EVENT_LABELS, CLASS_NAMES,
     FILT_LOW, FILT_HIGH, FILT_METHOD,
     EPOCH_TMIN, EPOCH_TMAX, BASELINE, REJECT_THRESH,
-    ICA_N_COMPS, ICA_METHOD, ICA_SEED
 )
 from src.p1_preprocessing.eval_labels import get_eval_labels
 
@@ -158,26 +157,6 @@ def apply_filter(raw: mne.io.Raw) -> mne.io.Raw:
     return raw
 
 
-def apply_ica(raw: mne.io.Raw) -> mne.io.Raw:
-    """
-    Apply ICA to remove ocular and muscular artefacts.
-    With 3 channels, ICA capacity is limited but applied
-    as a signal hygiene step.
-    """
-    ica = mne.preprocessing.ICA(
-        n_components=ICA_N_COMPS,
-        method=ICA_METHOD,
-        random_state=ICA_SEED,
-        max_iter=200,
-        verbose=False
-    )
-    ica.fit(raw, verbose=False)
-    # With 3 channels, no component is excluded automatically
-    # (would require separate EOG channels for correlation)
-    ica.apply(raw, verbose=False)
-    return raw
-
-
 def extract_epochs(raw: mne.io.Raw) -> mne.Epochs:
     """
     Segment the signal into epochs for TRAINING sessions (1-3).
@@ -286,7 +265,6 @@ def normalize_event_ids(epochs: mne.Epochs) -> mne.Epochs:
 
 
 def process_subject(subject: int, suffix: str,
-                    apply_ica_flag: bool = False,
                     save: bool = True) -> mne.Epochs:
     """
     Full pipeline for one subject and one split (T/E).
@@ -296,7 +274,6 @@ def process_subject(subject: int, suffix: str,
     ----------
     subject       : subject number (1–9)
     suffix        : 'T' (sessions 1-3) or 'E' (sessions 4-5)
-    apply_ica_flag: if True, apply ICA (slower on CPU)
     save          : if True, save epochs to data/processed/
 
     Returns
@@ -325,11 +302,7 @@ def process_subject(subject: int, suffix: str,
         # 2. Filter
         raw = apply_filter(raw)
 
-        # 3. ICA (optional, may be slow)
-        if apply_ica_flag:
-            raw = apply_ica(raw)
-
-        # 4. Epoching
+        # 3. Epoching
         try:
             if suffix == EVAL_SUFFIX:
                 # Evaluation sessions: align to cue 783, apply MOABB labels
@@ -579,10 +552,6 @@ def parse_args():
         "--summary", action="store_true",
         help="Generate epoch summary figure per subject"
     )
-    parser.add_argument(
-        "--ica", action="store_true",
-        help="Apply ICA for artefact removal (slower)"
-    )
     return parser.parse_args()
 
 
@@ -624,7 +593,7 @@ def main():
         for subj in subjects:
             for suf in suffixes:
                 try:
-                    process_subject(subj, suf, apply_ica_flag=args.ica)
+                    process_subject(subj, suf)
                     if args.plot:
                         plot_subject_overview(subj, suf)
                 except Exception as e:

@@ -38,14 +38,31 @@ class GaussianNoise:
 
 
 class TimeShift:
-    """Random circular shift along the time axis (last dim) only -
-    frequency axis (dim -2) is never touched."""
+    """Random shift along the time axis (last dim) only - frequency axis
+    (dim -2) is never touched.
 
-    def __init__(self, max_shift: int = 6):
+    The vacated edge is filled with `fill` instead of wrapping around
+    (external review, L-4). `torch.roll` is a CIRCULAR shift: the end of
+    the imagery period (where ERD is deepest) would reappear at the start
+    of the image, a discontinuity that cannot occur in a real trial. At
+    max_shift=6 over IMG_TIME_BINS=32 that wrapped band is up to ~19% of
+    the image. fill=0.5 is the neutral value on the [0,1] ERSP scale
+    (0 dB, i.e. no spectral change vs. baseline), so the shifted-in region
+    reads as "no perturbation" rather than as inverted dynamics.
+    """
+
+    def __init__(self, max_shift: int = 6, fill: float = 0.5):
         self.max_shift = max_shift
+        self.fill = fill
 
     def __call__(self, x: torch.Tensor) -> torch.Tensor:
         shift = int(torch.randint(-self.max_shift, self.max_shift + 1, (1,)).item())
         if shift == 0:
             return x
-        return torch.roll(x, shifts=shift, dims=-1)
+        out = torch.full_like(x, self.fill)
+        if shift > 0:
+            # shift later in time: [0:n-shift] lands at [shift:n]
+            out[..., shift:] = x[..., :-shift]
+        else:
+            out[..., :shift] = x[..., -shift:]
+        return out
