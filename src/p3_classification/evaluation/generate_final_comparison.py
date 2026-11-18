@@ -105,8 +105,8 @@ def fig1_full_comparison():
     ax.set_ylabel("Accuracy (%) — mean ± std across 9 subjects")
     ax.set_ylim([0, 100])
     ax.set_title(
-        "Comparación final de métodos — BCI-IV-2b (sesiones 4-5)\n"
-        "Rayado = modelo pooled (un solo modelo, 9 sujetos) · Borde negro = ensamble (nuevo mejor resultado)",
+        "Final method comparison — BCI-IV-2b (sessions 4-5)\n"
+        "Hatched = pooled model (one model, 9 subjects) · Black edge = ensemble (new best result)",
         fontsize=11
     )
     ax.spines["top"].set_visible(False)
@@ -137,7 +137,7 @@ def fig2_ensemble_per_subject():
              np.mean([r["acc_cnn"] for r in rows]) * 100,
              np.mean([r["acc_ens"] for r in rows]) * 100]
     ax.plot(xs, means, marker="s", color="black", linewidth=3, markersize=10,
-            label="Media (9 sujetos)", zorder=5)
+            label="Mean (9 subjects)", zorder=5)
     for x, y in zip(xs, means):
         ax.annotate(f"{y:.1f}%", (x, y), textcoords="offset points",
                     xytext=(0, 10), ha="center", fontsize=10, fontweight="bold")
@@ -145,8 +145,8 @@ def fig2_ensemble_per_subject():
     ax.set_xticks(xs)
     ax.set_xticklabels(labels, fontsize=10)
     ax.set_ylabel("Accuracy (%)")
-    ax.set_title("El ensamble iguala o supera al mejor de los dos métodos\n"
-                "en la mayoría de los sujetos (verde = ensamble gana o empata)",
+    ax.set_title("The ensemble matches or beats the better of the two methods\n"
+                "on most subjects (green = ensemble wins or ties)",
                 fontsize=11)
     ax.legend(loc="lower right")
     ax.spines["top"].set_visible(False)
@@ -170,14 +170,14 @@ def fig3_lr_sweep():
     for i, (m, s) in enumerate(zip(means, stds)):
         ax.annotate(f"{m:.1f}%", (i, m), textcoords="offset points",
                     xytext=(0, 12), ha="center", fontsize=10, fontweight="bold")
-    ax.axhline(50, color="gray", linewidth=0.8, linestyle="--", label="Azar (50%)")
+    ax.axhline(50, color="gray", linewidth=0.8, linestyle="--", label="Chance (50%)")
     ax.set_xticks(range(len(lrs)))
     ax.set_xticklabels([f"{lr:.0e}" for lr in lrs])
     ax.set_xlabel("Learning rate")
-    ax.set_ylabel("Accuracy media (%), 9 sujetos")
+    ax.set_ylabel("Mean accuracy (%), 9 subjects")
     ax.set_ylim([40, 70])
-    ax.set_title("ShallowConvNet — barrido de learning rate\n"
-                "Sin tendencia clara: el LR no es la causa del colapso", fontsize=11)
+    ax.set_title("ShallowConvNet — learning-rate sweep\n"
+                "No clear trend: the learning rate is not the cause of the collapse", fontsize=11)
     ax.legend()
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
@@ -203,16 +203,16 @@ def fig4_augmentation():
 
     mb, ma = np.mean(baseline), np.mean(augmented)
     ax.plot(xs, [mb, ma], marker="s", color="black", linewidth=3, markersize=10,
-            label="Media (9 sujetos)", zorder=5)
+            label="Mean (9 subjects)", zorder=5)
     for x, y in zip(xs, [mb, ma]):
         ax.annotate(f"{y:.1f}%", (x, y), textcoords="offset points",
                     xytext=(0, 10), ha="center", fontsize=10, fontweight="bold")
 
     ax.set_xticks(xs)
-    ax.set_xticklabels(["Sin aumentación", "Con aumentación\n(ruido + time-shift)"], fontsize=10)
+    ax.set_xticklabels(["No augmentation", "With augmentation\n(noise + time-shift)"], fontsize=10)
     ax.set_ylabel("Accuracy (%)")
-    ax.set_title("ShallowConvNet — efecto de la aumentación de datos\n"
-                "+1.8pp, p=0.156 (no significativo, n=9) — prometedor, no concluyente",
+    ax.set_title("ShallowConvNet — effect of data augmentation\n"
+                "+1.8pp, p=0.156 (not significant, n=9) — promising, not conclusive",
                 fontsize=11)
     ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.08), ncol=1)
     ax.spines["top"].set_visible(False)

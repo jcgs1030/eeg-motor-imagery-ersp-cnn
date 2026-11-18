@@ -1,14 +1,21 @@
 # Baseline window bug — before / diagnostic / confirmation
 
 Evidence trail for the baseline-window contamination finding documented in
-[`EXPERIMENTS.md`](../../EXPERIMENTS.md#diagnostic-finding--baseline-window-contamination-identified-reprocessing-pending).
+[`EXPERIMENTS.md`](../../EXPERIMENTS.md#diagnostic-finding--baseline-window-contamination-fixed-and-reprocessed).
 Kept here (outside `results/figures/`, which is gitignored as regenerable output)
 because these three images are the historical record of the finding, referenced
 from the main README and the thesis material.
 
 At the time these were generated, the production pipeline still used the
-original `BASELINE = (-0.5, 0.0)` window — none of this has been applied to
-Experiments 1–5b yet.
+original `BASELINE = (-0.5, 0.0)` window. **That has since changed:** the fix
+was applied (`EPOCH_TMIN = -3.0`, `BASELINE = (-1.0, 0.0)`), all epochs and
+ERSP tensors were regenerated, and Experiments 1–5b were re-run — see
+"Reprocessing outcome" in that section. These images are therefore a
+before-picture, not a description of the current pipeline.
+
+Note also that the fix removed the STFT zero-padding contamination but only
+reduced post-cue leakage into the baseline reference; 50% of the selected
+STFT frames still straddle the cue. See "What the fix did not solve".
 
 1. **`01_BEFORE_grand_average_flat_no_erd_visible.png`** — grand-average ERSP
    (STFT, 9 subjects pooled, sessions 1–5) using the original 0.5 s baseline.

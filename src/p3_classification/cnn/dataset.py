@@ -15,7 +15,7 @@ from sklearn.model_selection import train_test_split
 from torch.utils.data import Dataset, DataLoader, Subset, random_split
 from src.config import (
     DATA_PROC, SUBJECTS, BATCH_SIZE, VAL_SPLIT, RANDOM_SEED,
-    N_CHANNELS, IMG_FREQ_BINS, IMG_TIME_BINS, TRAIN_SUFFIX, EVAL_SUFFIX
+    TRAIN_SUFFIX, EVAL_SUFFIX
 )
 
 

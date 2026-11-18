@@ -38,13 +38,14 @@ Each stage reads the previous stage's output from `data/processed/`.
 
 ```
 eeg-motor-imagery-ersp-cnn/
-├── README.md
+├── README.md · LICENSE
 ├── EXPERIMENTS.md                 ← full experimental log: every result, fix and caveat
 ├── pyproject.toml · uv.lock · .python-version
 ├── data/
 │   ├── raw/                       ← GDF files go here (B0101T.gdf ... B0905E.gdf)
 │   └── processed/                 ← S??{T,E}-epo.fif (stage 1) and S??{T,E}-ersp.npz (stage 2)
-├── notebooks/                     ← dataset exploration
+├── notebooks/                     ← dataset exploration (runnable: `uv run jupyter notebook`)
+├── tests/                         ← 30 unit tests, `uv run pytest`
 ├── src/
 │   ├── config.py                  ← all parameters, shared by every stage
 │   │
@@ -109,6 +110,13 @@ use the ERSP images. The ensemble joins both branches.
 
 ### Where to find what
 
+Paths under `results/figures/`, `results/metrics/` and `*.pth` are
+**gitignored as regenerable output**: they exist after you run the pipeline,
+not in a fresh clone. The committed exceptions are
+`results/baseline_bug_before_fix/` (historical evidence images),
+`results/trial_timeline_verification.txt`, and the per-method
+`results/<method>/metrics/*.csv` and `figures/*.png` tables.
+
 | Question | Code | Results |
 |---|---|---|
 | How is the raw EEG cleaned? | `src/p1_preprocessing/preprocessing.py`, `src/config.py` | `results/figures/` (preprocessing figures) |
@@ -118,7 +126,7 @@ use the ERSP images. The ensemble joins both branches.
 | Pooled CNN results (Exp 1) | `src/p3_classification/cnn/train.py`, `evaluation/evaluate.py` | `results/*_all.pth`, `results/metrics/`, `results/figures/` |
 | Subject-specific CNN results (Exp 2) | `src/p3_classification/cnn/train_subject_specific.py` | `results/subject_specific/` |
 | Classical baselines (Exp 3–5) | `src/p3_classification/classical/` | `results/csp_lda/`, `results/ea_csp_lda/`, `results/fbcsp/`, `results/riemannian/` |
-| Cross-validation within sessions 1–3 | `src/p3_classification/evaluation/evaluate_cv.py` | `results/cv_within_train/` |
+| Cross-validation within sessions 1–3 | `src/p3_classification/evaluation/evaluate_cv.py` | `results/cv_within_train/` (empty until you run it; the 5-fold CV numbers quoted in `EXPERIMENTS.md` → "Critical Bug Fix" came from an earlier ad-hoc run) |
 | Best result (ensemble) and its p-values | `src/p3_classification/evaluation/experiment_ensemble_validated.py`, `diagnostic_stats_test.py` | `EXPERIMENTS.md` → "Follow-up Experiments" |
 | Does the model look at mu/beta over C3/C4? | `src/analysis/interpretability/gradcam_spectnet.py` | `results/figures/gradcam/` |
 | Is the ERD/ERS statistically significant? | `src/analysis/interpretability/erd_characterization.py` | `results/figures/erd_characterization/` |
@@ -215,7 +223,7 @@ from anywhere.
 | Bandpass filter | 8–30 Hz (FIR, Hamming) | Mu and beta bands |
 | Artifacts | 100 µV peak-to-peak epoch rejection | Ocular/muscular artifacts. No ICA: with 3 channels and no EOG reference it is mathematically the identity map — see `config.py` |
 | Epoch window | −3.0 to 4.0 s around the cue | Includes the full pre-cue fixation period |
-| ERSP baseline | −1.0 to 0.0 s | Must be ≥ STFT window length (see "Known Methodological Findings") |
+| ERSP baseline | −1.0 to 0.0 s | Must be ≥ STFT window length. Clear of the epoch's extraction edge, but **not** of the cue: 50% of the selected STFT frames still straddle t=0 — see "Known Methodological Findings" |
 | Analysis window | −0.5 to 4.0 s | Part of the epoch turned into the image |
 | STFT | Hann, 256 samples (1.024 s), hop 9 samples (36 ms, ~96.5% overlap) | ~1 Hz frequency resolution, 125 real time frames |
 | ERSP range | 8–30 Hz (22 bins) | Motor-relevant frequencies |
@@ -302,11 +310,18 @@ lower on 7 of 9 subjects), EEGNet −0.4 pp (p = 0.734), ShallowConvNet +0.3 pp
 | EA + CSP + LDA | 71.0% ± 12.6% | 69.8% ± 13.3% | 0.419 |
 | EA + CSP + SVM | 72.5% ± 12.0% | 71.4% ± 13.1% | 0.450 |
 
+> These are not *similar* to Experiment 3, they are **identical** — EA placed
+> before MNE's `CSP` is algebraically a no-op, because `CSP` whitens
+> internally. Features match to float64 epsilon and predictions match on 9/9
+> subjects. The experiment therefore says nothing about the offline→online
+> shift. See [`EXPERIMENTS.md`](EXPERIMENTS.md) → "Experiment 4" and
+> `src/analysis/diagnostics/diagnostic_ea_invariance.py`.
+
 ### Experiment 5a — Filter Bank CSP (best result)
 
 | Classifier | Accuracy | F1-score | Kappa |
 |---|---|---|---|
-| **FBCSP + LDA** | **75.9% ± 13.4%** | **75.5% ± 13.7%** | **0.519** |
+| **FBCSP + LDA** | **75.9% ± 13.4%** | **75.5% ± 13.7%** | **0.518** |
 | FBCSP + SVM | 73.6% ± 13.5% | 72.7% ± 14.5% | 0.472 |
 
 ### Experiment 5b — Riemannian Geometry
@@ -314,7 +329,7 @@ lower on 7 of 9 subjects), EEGNet −0.4 pp (p = 0.734), ShallowConvNet +0.3 pp
 | Classifier | Accuracy | F1-score | Kappa |
 |---|---|---|---|
 | Riem-MDM | 70.8% ± 13.8% | 69.2% ± 15.4% | 0.416 |
-| Riem-TS+LDA | 72.9% ± 13.4% | 72.0% ± 13.9% | 0.459 |
+| Riem-TS+LDA | 72.9% ± 13.4% | 71.9% ± 13.9% | 0.458 |
 
 ### Key Finding
 
@@ -334,8 +349,11 @@ its own — see "Known Methodological Findings" below. High inter-subject
 variance (±12–16%) reflects genuine differences in individual EEG motor
 imagery responses (S04 > 90%, S02/S03 ~50–58%).
 
-See [`results/figures/final_comparison_all_methods.png`](results/figures/final_comparison_all_methods.png)
-for the full visual comparison including the ensemble, and
+For the full visual comparison including the ensemble, generate
+`results/figures/final_comparison_all_methods.png` with
+`uv run python src/p3_classification/evaluation/generate_final_comparison.py`
+(figures under `results/figures/` are gitignored as regenerable output, so
+they are not in the repository), and see
 [`EXPERIMENTS.md`](EXPERIMENTS.md#follow-up-experiments--statistical-validation-ensembling-improvement-attempts)
 for the detailed narrative (statistical validation, the ensemble, and the
 ShallowConvNet improvement attempts).
@@ -358,6 +376,14 @@ reappears (S04 alone: -2.87 dB; 9 subjects pooled: -0.98 dB, same direction).
 See [`results/baseline_bug_before_fix/`](results/baseline_bug_before_fix/) for
 the before/diagnostic/confirmation images. Fixed by extending
 `EPOCH_TMIN`/`BASELINE` in `src/config.py`.
+
+*Partially fixed, quantified:* the fix removed the STFT zero-padding
+contamination at the epoch's extraction edge, but baseline frames are still
+selected by their centre, so 14 of the 28 selected frames (50%) carry up to
+0.5 s of post-cue signal. `BASELINE = (-1.52, -0.52)` would be fully pre-cue
+at the same width; it is not applied because it invalidates every cached ERSP
+tensor. Measured by
+`src/analysis/diagnostics/diagnostic_baseline_frame_support.py`.
 
 **2. Numerical epsilon comparable to signal scale.** A fixed `epsilon = 1e-12`
 added for `log(0)` safety was the same order of magnitude as the actual EEG

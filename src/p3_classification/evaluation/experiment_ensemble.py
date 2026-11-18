@@ -43,13 +43,12 @@ from scipy.stats import wilcoxon
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 from sklearn.metrics import accuracy_score, cohen_kappa_score
 from src.config import (
-    DATA_PROC, SUBJECTS, SFREQ, N_CHANNELS, IMG_FREQ_BINS, IMG_TIME_BINS, DEVICE,
-    RESULTS_DIR,
+    DATA_PROC, SUBJECTS, SFREQ, N_CHANNELS, IMG_FREQ_BINS, IMG_TIME_BINS, RESULTS_DIR,
 )
 from src.p2_ersp.ersp import compute_ersp_image
 from src.p3_classification.cnn.models import get_model
 from src.p3_classification.classical.train_fbcsp import (
-    load_epochs, extract_fbcsp_features, EVENT_LABEL_MAP, MI_TMIN, MI_TMAX
+    load_epochs, extract_fbcsp_features, EVENT_LABEL_MAP
 )
 
 mne.set_log_level("ERROR")

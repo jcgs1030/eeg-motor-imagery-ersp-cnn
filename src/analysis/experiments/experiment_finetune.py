@@ -22,7 +22,9 @@ Two modes, both starting from the SAME pooled checkpoint
       lower learning rate, for a few more epochs. This is NOT the same as
       the original pooled training - it starts from the already-converged
       checkpoint and just gives it a short low-LR continuation. Answers
-      "fine-tuning sobre el promedio/pooled en vez de por sujeto".
+      "fine-tuning on the pooled/average model instead of per subject"
+      (advisor's wording, in Spanish: "fine-tuning sobre el promedio/pooled
+      en vez de por sujeto").
 
 Does not touch any committed result file.
 
@@ -32,7 +34,6 @@ Usage:
 """
 
 import argparse
-import copy
 import time
 
 import numpy as np
@@ -201,8 +202,8 @@ def main():
               f"(freeze conv1/conv2, lr={FT_LR}), subjects={args.subjects}\n")
         results = finetune_per_subject(args.subjects, args.device)
     else:
-        print(f"Fine-tuning SpectNet pooled, GLOBAL continuation "
-              f"(all layers unfrozen, low lr, full pooled set)\n")
+        print("Fine-tuning SpectNet pooled, GLOBAL continuation "
+              "(all layers unfrozen, low lr, full pooled set)\n")
         results = finetune_global(args.device)
 
     print("\n== Per-subject comparison: pooled baseline vs. fine-tuned ==")

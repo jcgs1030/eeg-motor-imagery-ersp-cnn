@@ -58,10 +58,9 @@ import torch.nn as nn
 import torch.optim as optim
 from sklearn.metrics import cohen_kappa_score
 from sklearn.model_selection import train_test_split
-from src.config import (DATA_PROC, SFREQ, CHANNELS, N_CHANNELS, RANDOM_SEED, DEVICE,
+from src.config import (DATA_PROC, SFREQ, N_CHANNELS, RANDOM_SEED, DEVICE,
                         RESULTS_DIR)
 from src.p2_ersp.ersp import compute_ersp_image
-from src.p3_classification.cnn.models import get_model
 from src.p3_classification.classical.train_fbcsp import EVENT_LABEL_MAP
 from src.p3_classification.evaluation.diagnostic_stats_test import per_subject_acc_pooled, load_per_subject_csv
 

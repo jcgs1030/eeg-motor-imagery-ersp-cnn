@@ -20,10 +20,10 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from src.config import (
-    RESULTS_DIR, FIGURES_DIR, METRICS_DIR, SUBJECTS,
+    RESULTS_DIR, FIGURES_DIR, SUBJECTS,
     N_CHANNELS, IMG_FREQ_BINS, IMG_TIME_BINS,
-    BATCH_SIZE, MAX_EPOCHS, LEARNING_RATE, WEIGHT_DECAY,
-    PATIENCE, VAL_SPLIT, RANDOM_SEED, DEVICE
+    MAX_EPOCHS, LEARNING_RATE, WEIGHT_DECAY,
+    PATIENCE, RANDOM_SEED, DEVICE
 )
 from src.p3_classification.cnn.dataset import build_loaders
 from src.p3_classification.cnn.models import get_model
@@ -75,10 +75,10 @@ def train_model(model_name: str,
     torch.manual_seed(RANDOM_SEED)
     np.random.seed(RANDOM_SEED)
 
-    print(f"\n══════════════════════════════════════════════")
+    print("\n══════════════════════════════════════════════")
     print(f"  Training: {model_name.upper()} | Subjects: {subjects}")
     print(f"  Device: {device} | Max epochs: {MAX_EPOCHS}")
-    print(f"══════════════════════════════════════════════")
+    print("══════════════════════════════════════════════")
 
     # ── Data ──
     train_loader, val_loader, test_loader = build_loaders(subjects=subjects)
@@ -160,7 +160,7 @@ def train_model(model_name: str,
 
     # ── Final evaluation on test set ──
     test_loss, test_acc = evaluate(model, test_loader, criterion, device)
-    print(f"\n  ── Final evaluation (sessions 4-5) ──")
+    print("\n  ── Final evaluation (sessions 4-5) ──")
     print(f"  Test Loss: {test_loss:.4f} | Test Acc: {test_acc:.1%}")
 
     # ── Save model ──
@@ -253,7 +253,7 @@ def main():
         device_str=args.device
     )
 
-    print(f"\n  ── Summary ──")
+    print("\n  ── Summary ──")
     print(f"  Model:      {results['model_name']}")
     print(f"  Parameters: {results['n_params']:,}")
     print(f"  Test Acc:   {results['test_acc']:.1%}")
